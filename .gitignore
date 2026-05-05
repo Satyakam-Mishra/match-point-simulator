@@ -1,0 +1,9 @@
+# .gitignore
+venv/
+__pycache__/
+.pytest_cache/
+data/
+*.pkl
+*.joblib
+.env
+.DS_Store
