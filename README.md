@@ -35,3 +35,11 @@ Ensure you have Docker Desktop installed.
 * `notebooks/`: Jupyter notebooks for Exploratory Data Analysis (EDA) and model prototyping.
 * `data/`: Directory for raw and processed datasets (ignored by Git).
 * `tests/`: Pytest files for ensuring pipeline and API robustness.
+
+## ⚖️ Data License & Attribution
+The dataset used to train this model is crowdsourced shot-by-shot professional tennis data provided by [The Tennis Abstract Match Charting Project](https://github.com/JeffSackmann/tennis_MatchChartingProject), created by Jeff Sackmann.
+
+This project is licensed under a [Creative Commons Attribution-NonCommercial-ShareAlike 4.0 International License](https://creativecommons.org/licenses/by-nc-sa/4.0/). 
+* **Attribution:** All underlying shot data belongs to the Match Charting Project.
+* **Non-Commercial:** This is a strictly educational portfolio project and is not monetized.
+* **ShareAlike:** The code and models in this repository are shared under the same CC BY-NC-SA 4.0 license.

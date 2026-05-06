@@ -1,0 +1,1 @@
+# 3. Add a footer to your Streamlit App (Later) When we build frontend/app.py, we will add a small text block at the bottom of the UI using st.caption() that says: "Data provided by Jeff Sackmann's Match Charting Project (CC BY-NC-SA 4.0)."
