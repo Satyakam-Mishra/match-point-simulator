@@ -14,3 +14,5 @@ CHARTING_W_POINTS_TO_2009 = os.path.join("data", "charting-w-points-to-2009.csv"
 CLEANED_METADATA = os.path.join("dataset", "cleaned_metadata.csv")
 CLEANED_POINTS = os.path.join("dataset", "cleaned_points.csv")
 FINAL_CLEANED_DATA = os.path.join("dataset", "final_cleaned_data.csv")
+FEATURED_DATA = os.path.join("dataset", "featured_data.csv")
+FINAL_CLEANED_VALIDATED_DATA = os.path.join("dataset", "final_cleaned_validated_data.csv")
