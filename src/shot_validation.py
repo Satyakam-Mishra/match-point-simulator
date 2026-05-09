@@ -21,7 +21,8 @@ terminal_symbols = ['*', '#', '@']
 error_location = ['n', 'w', 'd', 'x']
 
 def validate_shots(first_serve, second_serve, verbose=False) -> bool:
-    """Validates the shot sequences for a point. Cleans invalid characters and allows terminal symbols in first shot."""
+    """Validates the shot sequences for a point. Cleans invalid characters and allows terminal symbols in first shot.
+    Handles double faults where second serve may not have a terminal symbol."""
     # Check if both serves are missing
     if pd.isna(first_serve) and pd.isna(second_serve):
         if verbose:
@@ -62,11 +63,21 @@ def validate_shots(first_serve, second_serve, verbose=False) -> bool:
             print(f"FAIL: First shot '{cleaned_shots[0]}' doesn't start with serve direction")
         return False
     
-    # Last shot must contain a terminal symbol
-    if not any(char in terminal_symbols for char in cleaned_shots[-1]):
-        if verbose:
-            print(f"FAIL: Last shot '{cleaned_shots[-1]}' has no terminal symbol")
-        return False
+    # Check for double fault case: second serve only with error location, no terminal symbol
+    # Example: first_serve="4*", second_serve="5d" (2 chars)
+    is_double_fault = (
+        len(cleaned_shots) == 1 and 
+        len(cleaned_shots[0]) == 2 and 
+        cleaned_shots[0][0] in serve_direction and 
+        cleaned_shots[0][1] in error_location
+    )
+    
+    # Last shot must contain a terminal symbol (unless it's a double fault)
+    if not is_double_fault:
+        if not any(char in terminal_symbols for char in cleaned_shots[-1]):
+            if verbose:
+                print(f"FAIL: Last shot '{cleaned_shots[-1]}' has no terminal symbol")
+            return False
     
     # Only non-last shots should not contain terminal symbols in the middle
     for shot in cleaned_shots[:-1]:
@@ -75,21 +86,22 @@ def validate_shots(first_serve, second_serve, verbose=False) -> bool:
                 print(f"FAIL: Non-terminal shot '{shot}' contains terminal symbol")
             return False
     
-    # Last shot validation: check terminal symbol rules
-    last_shot = cleaned_shots[-1]
-    if last_shot[-1] in terminal_symbols:
-        if last_shot[-1] == '*':
-            # Winner - should not have error location before terminal symbol
-            if len(last_shot) > 1 and last_shot[-2] in error_location:
-                if verbose:
-                    print(f"FAIL: Winner '{last_shot}' has error location before *")
-                return False
-        elif last_shot[-1] in ['#', '@']:
-            # Error - must have error location before terminal symbol
-            if len(last_shot) <= 1 or last_shot[-2] not in error_location:
-                if verbose:
-                    print(f"FAIL: Error shot '{last_shot}' missing error location before terminal")
-                return False
+    # Last shot validation: check terminal symbol rules (skip for double fault)
+    if not is_double_fault:
+        last_shot = cleaned_shots[-1]
+        if last_shot[-1] in terminal_symbols:
+            if last_shot[-1] == '*':
+                # Winner - should not have error location before terminal symbol
+                if len(last_shot) > 1 and last_shot[-2] in error_location:
+                    if verbose:
+                        print(f"FAIL: Winner '{last_shot}' has error location before *")
+                    return False
+            elif last_shot[-1] in ['#', '@']:
+                # Error - must have error location before terminal symbol
+                if len(last_shot) <= 1 or last_shot[-2] not in error_location:
+                    if verbose:
+                        print(f"FAIL: Error shot '{last_shot}' missing error location before terminal")
+                    return False
     
     return True
 
