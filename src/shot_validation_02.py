@@ -1,7 +1,7 @@
 # Do the necessary imports
 import pandas as pd
 import numpy as np
-from feature_generator import make_shots, is_first_serve
+from src.rally_parser_helpers import make_shots, is_first_serve
 from config import FINAL_CLEANED_DATA, FINAL_CLEANED_VALIDATED_DATA
 
 ground_strokes = ['f', 'b', 's', 'r', 'v', 'o', 'l', 'm', 'z', 'j', 'q', 't', 'p', 'u', 'y']
