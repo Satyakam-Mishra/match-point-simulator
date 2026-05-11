@@ -55,9 +55,9 @@ def point_parser(point):
         return 2, 3
     elif point == '40-40':
         return 3, 3
-    elif point == 'Ad-40':
+    elif point == 'AD-40':
         return 4, 3
-    elif point == '40-Ad':
+    elif point == '40-AD':
         return 3, 4
     else:
         point_list = point.split("-")
@@ -323,14 +323,14 @@ def feature_generator_live_point_win_probability():
     dataset['gender'] = dataset['gender'].map(gender_mapping)
     
     # Now we will parse the point number from the point string. We will create two new columns for player 1 and player 2 points.
-    dataset[['player_1_point', 'player_2_point']] = dataset['point_number'].apply(lambda x: pd.Series(point_parser(x)))
+    dataset[['player_0_point', 'player_1_point']] = dataset['points'].apply(lambda x: pd.Series(point_parser(x)))
     
         # We will drop the original point_number column.
-    dataset.drop(columns=['point_number'], inplace=True)
+    dataset.drop(columns=['point_number', 'points'], inplace=True)
     
     # Now we will rename the columns such that 0 maps to player 1 and 1 maps to player 2. We will also rename the surface columns to surface_hard, surface_clay, and surface_grass.
     
-    dataset.rename(columns={'surface_hard': 'surfacehard', 'surface_clay': 'surfaceclay', 'surface_grass': 'surfacegrass', 'player_1_point': 'player_0_point', 'player_2_point': 'player_1_point', 'pl_1_hand': 'pl_0_hand', 'pl_2_hand': 'pl_1_hand', 'set1': 'set0', 'set2': 'set1', 'game1': 'game0', 'game2': 'game1', 'Svr': 'svr'}, inplace=True)
+    dataset.rename(columns={'surface_hard': 'surfacehard', 'surface_clay': 'surfaceclay', 'surface_grass': 'surfacegrass', 'pl_1_hand': 'pl_0_hand', 'pl_2_hand': 'pl_1_hand', 'set1': 'set0', 'set2': 'set1', 'game1': 'game0', 'game2': 'game1', 'Svr': 'svr'}, inplace=True)
     
     dataset['svr'] = dataset['svr'] - 1
     dataset['point_winner'] = dataset['point_winner'] - 1
@@ -369,6 +369,12 @@ def feature_generator_live_point_win_probability():
     
     dataset = parse_serve_rph_live_point_win_probability(dataset)
     
+    dataset.drop(columns=['first_serve', 'second_serve'], inplace=True)
+    
+    # Also drop every info after the 6th shot as it is not relevant for the live point win probability model. We will drop the columns related to shots 7-10 from the end as well as the columns related to shots 4-6 from the front as they are not relevant for the live point win probability model.
+    
+    dataset.drop(columns=["double_fault", "serve_ace", "serve_error_location", "return_error_location", "return_error_type", "return_winner", "serve_plus_one_error_location", "serve_plus_one_error_type", "serve_plus_one_winner", "shot_4_error_location", "shot_4_error_type", "shot_4_winner", "shot_5_error_location", "shot_5_error_type", "shot_5_winner", "shot_6_error_location", "shot_6_error_type", "shot_6_winner", "shot_last_1_shot_type", "shot_last_1_shot_direction", "shot_last_1_shot_depth", "shot_last_1_shank_info", "shot_last_1_position_info", "shot_last_1_error_location", "shot_last_1_error_type", "shot_last_1_winner", "shot_last_2_shot_type", "shot_last_2_shot_direction", "shot_last_2_shot_depth", "shot_last_2_shank_info", "shot_last_2_position_info", "shot_last_2_error_location", "shot_last_2_error_type", "shot_last_2_winner", "shot_last_3_shot_type", "shot_last_3_shot_direction", "shot_last_3_shot_depth", "shot_last_3_shank_info", "shot_last_3_position_info", "shot_last_3_error_location", "shot_last_3_error_type", "shot_last_3_winner", "shot_last_4_shot_type", "shot_last_4_shot_direction", "shot_last_4_shot_depth", "shot_last_4_shank_info", "shot_last_4_position_info", "shot_last_4_error_location", "shot_last_4_error_type", "shot_last_4_winner", "shot_last_5_shot_type", "shot_last_5_shot_direction", "shot_last_5_shot_depth", "shot_last_5_shank_info", "shot_last_5_position_info", "shot_last_5_error_location", "shot_last_5_error_type", "shot_last_5_winner", "shot_last_6_shot_type", "shot_last_6_shot_direction", "shot_last_6_shot_depth", "shot_last_6_shank_info", "shot_last_6_position_info", "shot_last_6_error_location", "shot_last_6_error_type", "shot_last_6_winner", "shot_last_7_shot_type", "shot_last_7_shot_direction", "shot_last_7_shot_depth", "shot_last_7_shank_info", "shot_last_7_position_info", "shot_last_7_error_location", "shot_last_7_error_type", "shot_last_7_winner", "shot_last_8_shot_type", "shot_last_8_shot_direction", "shot_last_8_shot_depth", "shot_last_8_shank_info", "shot_last_8_position_info", "shot_last_8_error_location", "shot_last_8_error_type", "shot_last_8_winner", "shot_last_9_shot_type", "shot_last_9_shot_direction", "shot_last_9_shot_depth", "shot_last_9_shank_info", "shot_last_9_position_info", "shot_last_9_error_location", "shot_last_9_error_type", "shot_last_9_winner", "shot_last_10_shot_type", "shot_last_10_shot_direction", "shot_last_10_shot_depth", "shot_last_10_shank_info", "shot_last_10_position_info", "shot_last_10_error_location", "shot_last_10_error_type", "shot_last_10_winner", "rally_length"], inplace=True)
+    
     
     print("feature generation completed...")
     dataset.to_csv(LIVE_POINT_WIN_PROB_DATASET, index=False)
@@ -378,4 +384,3 @@ def feature_generator_live_point_win_probability():
     
 if __name__ == "__main__":
     dataset = feature_generator_live_point_win_probability()
-    validation_checker_live_point_win_probability(dataset)
