@@ -18,7 +18,11 @@ FEATURED_DATA = os.path.join("dataset", "featured_data.csv")
 FINAL_CLEANED_VALIDATED_DATA = os.path.join("dataset", "final_cleaned_validated_data.csv")
 LIVE_POINT_WIN_PROB_DATASET = os.path.join("dataset", "live_point_win_probability_dataset.csv")
 NEXT_BEST_SHOT_DATASET = os.path.join("dataset", "next_best_shot_dataset.csv")
+BEST_RETURN_BASED_ON_SERVE_DATASET = os.path.join("dataset", "best_return_based_on_serve_dataset.csv")
 
 #model paths
 RANDOM_FOREST_LPWP_MODEL = os.path.join("models", "random_forest_lpwp_model.pkl")
 FEATURE_COLUMNS_LPWP = os.path.join("models", "feature_columns_lpwp.pkl")
+NEXT_BEST_SHOT_DATASET = os.path.join("dataset", "next_best_shot_dataset.csv")
+LIGHTGBM_NBS_MODEL = os.path.join("models", "nbs_lightgbm_model.pkl")
+LABEL_ENCODER_NBS = os.path.join("models", "nbs_label_encoder.pkl")

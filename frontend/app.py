@@ -8,7 +8,7 @@ import pickle
 # Add the src directory to the path to import modules FIRST
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 
-from config import RANDOM_FOREST_LPWP_MODEL, FEATURE_COLUMNS_LPWP, LIVE_POINT_WIN_PROB_DATASET
+from config import RANDOM_FOREST_LPWP_MODEL, FEATURE_COLUMNS_LPWP, LIVE_POINT_WIN_PROB_DATASET, RANDOM_FOREST_NBS_MODEL, FEATURE_COLUMNS_NBS, NEXT_BEST_SHOT_DATASET
 
 # ============= PAGE CONFIGURATION =============
 st.set_page_config(
@@ -71,6 +71,23 @@ POSITION_MAPPING = {
 }
 
 POSITION_REVERSE = {v: k for k, v in POSITION_MAPPING.items()}
+
+# Shank Info Mapping
+SHANK_INFO_MAPPING = {
+    'No': 0.0,
+    'Yes': 1.0
+}
+
+SHANK_INFO_REVERSE = {v: k for k, v in SHANK_INFO_MAPPING.items()}
+
+# Depth Mapping for opponent's shot
+DEPTH_MAPPING = {
+    'Shallow': 1,
+    'Medium': 2,
+    'Deep': 3
+}
+
+DEPTH_REVERSE = {v: k for k, v in DEPTH_MAPPING.items()}
 
 # ============= HELPER FUNCTIONS =============
 def point_parser(point):
@@ -164,24 +181,24 @@ def show_home_page():
     
     with col3:
         st.markdown("""
-        <div style="padding: 20px; border: 2px solid #4ECDC4; border-radius: 10px; text-align: center; margin: 10px 0;">
+        <div style="padding: 20px; border: 2px solid #FFA500; border-radius: 10px; text-align: center; margin: 10px 0;">
+        <h3>🎯 Next Best Shot Predictor</h3>
+        <p>Predict the best next shot given the opponent's previous shot and match context.</p>
+        </div>
+        """, unsafe_allow_html=True)
+        if st.button("🎯 Go to NBS Predictor", key="btn_nbs", use_container_width=True):
+            st.session_state.current_page = 'nbs_predictor'
+            st.rerun()
+    
+    with col4:
+        st.markdown("""
+        <div style="padding: 20px; border: 2px solid #95E1D3; border-radius: 10px; text-align: center; margin: 10px 0;">
         <h3>👤 Player Statistics</h3>
         <p>Explore detailed performance metrics and statistics for individual players.</p>
         </div>
         """, unsafe_allow_html=True)
         if st.button("👤 Go to Player Stats", key="btn_player", use_container_width=True):
             st.session_state.current_page = 'player'
-            st.rerun()
-    
-    with col4:
-        st.markdown("""
-        <div style="padding: 20px; border: 2px solid #95E1D3; border-radius: 10px; text-align: center; margin: 10px 0;">
-        <h3>🤖 Model Performance</h3>
-        <p>Understand model accuracy, feature importance, and prediction confidence metrics.</p>
-        </div>
-        """, unsafe_allow_html=True)
-        if st.button("🤖 Go to Model Performance", key="btn_model", use_container_width=True):
-            st.session_state.current_page = 'model'
             st.rerun()
 
 # ============= PREDICTOR PAGE =============
@@ -610,6 +627,241 @@ def show_player_page():
     st.markdown("---")
     st.info("Player Statistics page coming soon! Explore detailed performance metrics for individual players.")
 
+def show_nbs_predictor_page():
+    """Display the next best shot predictor"""
+    if st.button("← Back to Home", key="back_home_nbs"):
+        st.session_state.current_page = 'home'
+        st.rerun()
+    
+    st.title("🎯 Next Best Shot Predictor")
+    st.markdown("---")
+    
+    # Load model (cached for performance)
+    @st.cache_resource
+    def load_nbs_model():
+        """Load pre-trained NBS model from pickle files"""
+        model_path = RANDOM_FOREST_NBS_MODEL
+        features_path = FEATURE_COLUMNS_NBS
+        
+        try:
+            with open(model_path, 'rb') as f:
+                model = pickle.load(f)
+            with open(features_path, 'rb') as f:
+                feature_columns = pickle.load(f)
+            st.success("✅ NBS Model loaded successfully!")
+            return model, feature_columns
+        except FileNotFoundError:
+            st.error("❌ NBS Model files not found!")
+            st.info("Please run `python src/nbs_model_bayesian_opt_04.py` from the project root to generate the model files.")
+            st.info(f"Expected files:")
+            st.info(f"  - {model_path}")
+            st.info(f"  - {features_path}")
+            return None, []
+        except Exception as e:
+            st.error(f"❌ Error loading model: {e}")
+            return None, []
+    
+    model, feature_columns = load_nbs_model()
+    
+    if model is None:
+        st.stop()
+    
+    tab1, tab2 = st.tabs(["📊 Make Prediction", "ℹ️ Feature Guide"])
+    
+    with tab1:
+        st.subheader("Predict the Best Next Shot")
+        
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            st.markdown("### **Player Information**")
+            pl_0_hand = st.selectbox("Your Hand", ["Right (R)", "Left (L)"], key="nbs_pl_0_hand")
+            pl_0_hand = 0 if pl_0_hand == "Right (R)" else 1
+            
+            pl_1_hand = st.selectbox("Opponent Hand", ["Right (R)", "Left (L)"], key="nbs_pl_1_hand")
+            pl_1_hand = 0 if pl_1_hand == "Right (R)" else 1
+        
+        with col2:
+            st.markdown("### **Match Information**")
+            gender = st.selectbox("Gender", ["Men (M)", "Women (W)"], key="nbs_gender")
+            gender = 0 if gender == "Men (M)" else 1
+            
+            best_of = st.number_input("Best Of", min_value=3, max_value=5, value=3, step=2, key="nbs_best_of")
+        
+        st.markdown("---")
+        
+        st.markdown("### **Current Match Score**")
+        col1, col2, col3, col4 = st.columns(4)
+        with col1:
+            player_0_point = st.selectbox("Your Points", ["0", "15", "30", "40", "AD"], key="nbs_player_0_point", index=0)
+            player_0_point = point_parser(player_0_point)
+        with col2:
+            player_1_point = st.selectbox("Opponent Points", ["0", "15", "30", "40", "AD"], key="nbs_player_1_point", index=0)
+            player_1_point = point_parser(player_1_point)
+        with col3:
+            svr = st.selectbox("Serve/Return", ["Serve (0)", "Return (1)"], key="nbs_svr")
+            svr = 0 if svr == "Serve (0)" else 1
+        with col4:
+            surface = st.selectbox("Surface", ["Hard", "Clay", "Grass"], key="nbs_surface")
+            surface_Hard = 1 if surface == "Hard" else 0
+            surface_Clay = 1 if surface == "Clay" else 0
+            surface_Grass = 1 if surface == "Grass" else 0
+        
+        st.markdown("---")
+        
+        st.markdown("### **Current Rally Status**")
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            is_tiebreaker = st.checkbox("Is Tiebreaker", value=False, key="nbs_is_tiebreaker")
+            is_tiebreaker = float(is_tiebreaker)
+        with col2:
+            first_serve_in = st.selectbox("First Serve In", ["Yes (1)", "No (0)"], key="nbs_first_serve_in")
+            first_serve_in = 1.0 if first_serve_in == "Yes (1)" else 0.0
+        with col3:
+            shot_number = st.number_input("Shot Number (Your Current Shot)", min_value=1, max_value=20, value=2, key="nbs_shot_number")
+        
+        st.markdown("---")
+        
+        st.markdown("### **Opponent's Previous Shot**")
+        st.info("Describe the shot your opponent just hit")
+        
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            prev_shot_type_option = st.selectbox("Opponent Shot Type", ["None"] + list(SHOT_TYPE_MAPPING.keys()), key="nbs_prev_shot_type")
+            prev_shot_type = SHOT_TYPE_MAPPING.get(prev_shot_type_option, -1) if prev_shot_type_option != "None" else -1
+        
+        with col2:
+            prev_shot_direction_option = st.selectbox("Opponent Shot Direction", ["None"] + list(DIRECTION_MAPPING.keys()), key="nbs_prev_shot_direction")
+            prev_shot_direction = DIRECTION_MAPPING.get(prev_shot_direction_option, -1) if prev_shot_direction_option != "None" else -1
+        
+        with col3:
+            prev_shot_depth_option = st.selectbox("Opponent Shot Depth", ["None", "Shallow", "Medium", "Deep"], key="nbs_prev_shot_depth")
+            prev_shot_depth = -1 if prev_shot_depth_option == "None" else DEPTH_MAPPING.get(prev_shot_depth_option, -1)
+        
+        col1, col2 = st.columns(2)
+        with col1:
+            prev_shot_shank_info_option = st.selectbox("Opponent Shot - Shank", ["None", "No", "Yes"], key="nbs_prev_shot_shank")
+            prev_shot_shank_info = -1 if prev_shot_shank_info_option == "None" else SHANK_INFO_MAPPING.get(prev_shot_shank_info_option, -1)
+        
+        with col2:
+            prev_shot_position_info_option = st.selectbox("Opponent Position", ["None"] + list(POSITION_MAPPING.keys()), key="nbs_prev_shot_position")
+            prev_shot_position_info = POSITION_MAPPING.get(prev_shot_position_info_option, -1) if prev_shot_position_info_option != "None" else -1
+        
+        st.markdown("---")
+        
+        if st.button("🎯 Predict Best Next Shot", key="nbs_predict_button", use_container_width=True):
+            # Create input dataframe with all features
+            input_data = {
+                'pl_0_hand': pl_0_hand,
+                'pl_1_hand': pl_1_hand,
+                'best_of': best_of,
+                'gender': gender,
+                'point_number': 1,
+                'svr': svr,
+                'surface_Clay': surface_Clay,
+                'surface_Grass': surface_Grass,
+                'surface_Hard': surface_Hard,
+                'player_0_point': player_0_point,
+                'player_1_point': player_1_point,
+                'is_tiebreaker': is_tiebreaker,
+                'first_serve_in': first_serve_in,
+                'shot_number': shot_number,
+                'prev_shot_type': prev_shot_type,
+                'prev_shot_direction': prev_shot_direction,
+                'prev_shot_depth': prev_shot_depth,
+                'prev_shot_shank_info': prev_shot_shank_info,
+                'prev_shot_position_info': prev_shot_position_info,
+            }
+            
+            input_df = pd.DataFrame([input_data])
+            
+            # Ensure all required features are present
+            for col in feature_columns:
+                if col not in input_df.columns:
+                    input_df[col] = -1
+            
+            input_df = input_df[feature_columns]
+            
+            try:
+                predictions = model.predict(input_df)[0]
+                probabilities = model.predict_proba(input_df)[0]
+                
+                st.markdown("---")
+                st.markdown("## 🎯 **Recommended Next Shot**")
+                
+                # Parse y_string to display shot information
+                shot_parts = predictions.split('_')
+                
+                col1, col2, col3 = st.columns(3)
+                
+                with col1:
+                    if shot_parts[0] != 'NA':
+                        shot_type_num = int(shot_parts[0])
+                        shot_type_name = SHOT_TYPE_REVERSE.get(shot_type_num, 'Unknown')
+                        st.info(f"**Recommended Shot Type**\n{shot_type_name.title()}")
+                
+                with col2:
+                    if shot_parts[1] != 'NA':
+                        shot_dir_num = int(shot_parts[1])
+                        shot_dir_name = DIRECTION_REVERSE.get(shot_dir_num, 'Unknown')
+                        st.info(f"**Recommended Direction**\n{shot_dir_name.title()}")
+                
+                with col3:
+                    if shot_parts[2] != 'NA':
+                        shot_depth_num = int(shot_parts[2])
+                        shot_depth_name = DEPTH_REVERSE.get(shot_depth_num, 'Unknown')
+                        st.info(f"**Recommended Depth**\n{shot_depth_name.title()}")
+                
+                st.markdown("---")
+                
+                # Display all possible shots with probabilities
+                st.markdown("### **Top Recommended Shots**")
+                
+                # Get unique predictions and their probabilities
+                unique_preds = model.classes_
+                pred_data = pd.DataFrame({
+                    'Shot Sequence': unique_preds,
+                    'Probability (%)': probabilities * 100
+                }).sort_values('Probability (%)', ascending=False).head(10)
+                
+                st.dataframe(pred_data, use_container_width=True)
+                
+                st.markdown("### **Shot Sequence Breakdown**")
+                st.markdown(f"**Full Prediction:** `{predictions}`")
+                st.markdown(f"**Confidence:** {max(probabilities) * 100:.2f}%")
+            
+            except Exception as e:
+                st.error(f"Error making prediction: {str(e)}")
+    
+    with tab2:
+        st.markdown("""
+        ### **How to Use the Next Best Shot Predictor**
+        
+        This tool recommends the optimal next shot based on your opponent's previous shot and match context.
+        
+        #### **Input Guide**
+        - **Your Hand & Opponent Hand**: Handedness of each player
+        - **Gender**: Player classification (Men or Women)
+        - **Best Of**: Match format (3 or 5 sets)
+        - **Match Score**: Current points in the game
+        - **Serve/Return**: Whether you're serving (0) or returning (1)
+        - **Surface**: Court surface (Hard, Clay, or Grass)
+        - **Is Tiebreaker**: Check if playing a tiebreaker
+        - **First Serve In**: Whether first serve was in
+        - **Shot Number**: Your current shot number in the rally
+        
+        #### **Opponent's Previous Shot**
+        - **Shot Type**: What type of shot they hit (forehand, backhand, volley, etc.)
+        - **Direction**: Where they aimed (crosscourt, down the line, middle)
+        - **Depth**: How deep the shot landed (shallow, medium, deep)
+        - **Shank**: Whether it was a mishit
+        - **Position**: Where they were standing (baseline, net, behind baseline)
+        
+        #### **Output**
+        The model will recommend the best shot type, direction, and depth for your next shot,
+        along with a confidence score and alternative options.
+        """)
+
 def show_model_page():
     """Display the model performance page"""
     if st.button("← Back to Home", key="back_home_model"):
@@ -625,6 +877,8 @@ if st.session_state.current_page == 'home':
     show_home_page()
 elif st.session_state.current_page == 'predictor':
     show_predictor_page()
+elif st.session_state.current_page == 'nbs_predictor':
+    show_nbs_predictor_page()
 elif st.session_state.current_page == 'analysis':
     show_analysis_page()
 elif st.session_state.current_page == 'player':

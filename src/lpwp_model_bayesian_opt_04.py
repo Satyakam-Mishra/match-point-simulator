@@ -22,8 +22,8 @@ print("Running Random Forest for Live Point Winning Probability...")
 print("Loading dataset...")
 X = pd.read_csv(LIVE_POINT_WIN_PROB_DATASET)
 print(f"Dataset loaded: {len(X)} rows")
-print("Sampling 100% of data for faster experimentation...")
-X = X.sample(frac=1, random_state=random_seed)  # Use only 100% of the data for faster experimentation
+print("Sampling 10% of data for faster experimentation...")
+X = X.sample(frac=0.1, random_state=random_seed)  # Use only 10% of the data for faster experimentation
 print(f"Sampled data: {len(X)} rows")
 print("Filling missing values...")
 X.fillna(-1, inplace=True)
@@ -31,17 +31,26 @@ X.fillna(-1, inplace=True)
 y = X["point_winner"]
 X = X.drop(columns=["point_winner"])
 
+# Determine appropriate n_splits based on minimum class count
+min_class_count = y.value_counts().min()
+n_splits = max(2, min(5, min_class_count))  # Use at most 5 splits, but not more than smallest class
+print(f"Class distribution in point_winner: {y.value_counts().to_dict()}")
+print(f"Minimum class count: {min_class_count}, using n_splits={n_splits}")
+
 trackio.init(
     project="match-point-simulator",
     name="random_forest_lpwp"
 )
 
 def objective(trial):
-    max_depth = trial.suggest_int("max_depth", 18, 18)
+    max_depth = trial.suggest_int("max_depth", 10, 30)
+    n_estimators = trial.suggest_int("n_estimators", 100, 300)
+    min_samples_split = trial.suggest_int("min_samples_split", 5, 20)
+    min_samples_leaf = trial.suggest_int("min_samples_leaf", 2, 10)
     
-    rf = RandomForestClassifier(n_estimators=50, max_depth=max_depth, n_jobs=4, random_state=random_seed)
+    rf = RandomForestClassifier(n_estimators=n_estimators, max_depth=max_depth, min_samples_split=min_samples_split, min_samples_leaf=min_samples_leaf, n_jobs=4, random_state=random_seed)
     
-    cv = StratifiedKFold(n_splits=5, shuffle=True, random_state=random_seed)
+    cv = StratifiedKFold(n_splits=n_splits, shuffle=True, random_state=random_seed)
     
     scores = cross_val_score(rf, X, y, cv=cv, scoring="accuracy", n_jobs=1)
     mean_accuracy = scores.mean()
@@ -49,6 +58,9 @@ def objective(trial):
     trackio.log({
         "trail_number": trial.number,
         "max_depth": max_depth,
+        "n_estimators": n_estimators,
+        "min_samples_split": min_samples_split,
+        "min_samples_leaf": min_samples_leaf,
         "cv_accuracy": float(mean_accuracy)
         })
     return mean_accuracy
@@ -56,7 +68,7 @@ def objective(trial):
 print("Starting Optuna optimization...")
 
 study = optuna.create_study(direction="maximize")
-study.optimize(objective, n_trials=1, show_progress_bar=True)
+study.optimize(objective, n_trials=30, show_progress_bar=True)
 
 best_depth = study.best_params["max_depth"]
 best_accuracy = study.best_value

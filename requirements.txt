@@ -6,6 +6,7 @@ xgboost==2.0.3
 tqdm==4.67.3
 trackio==0.20.1
 optuna==4.8.0
+lightgbm==4.6.0
 
 # Backend API
 fastapi==0.115.2
@@ -20,3 +21,5 @@ plotly==6.7.0
 pytest==8.1.1
 requests==2.31.0
 joblib==1.4.0
+matplotlib==3.10.9
+seaborn==0.13.2
