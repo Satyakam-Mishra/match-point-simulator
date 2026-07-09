@@ -4,7 +4,7 @@ from sklearn.preprocessing import LabelEncoder
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import accuracy_score, classification_report
 import joblib  # For saving the model and encoder
-from config import NEXT_BEST_SHOT_DATASET, LIGHTGBM_NBS_MODEL, LABEL_ENCODER_NBS
+from config import NEXT_BEST_SHOT_DATASET, LIGHTGBM_NBS_MODEL, LABEL_ENCODER_NBS, FEATURE_COLUMNS_NBS
 
 # 1. LOAD DATA
 print("Loading full dataset...")
@@ -80,8 +80,9 @@ print(classification_report(y_test, y_test_pred, target_names=le.classes_))
 # Saving both the model and the encoder is vital for your simulator
 joblib.dump(model, LIGHTGBM_NBS_MODEL)
 joblib.dump(le, LABEL_ENCODER_NBS)
+joblib.dump(list(X.columns), FEATURE_COLUMNS_NBS)
 
-print("Model and Encoder saved successfully!")
+print("Model, Encoder, and Feature Columns saved successfully!")
 
 # Best Trial Accuracy: 31.38%
 # Best Params: {'learning_rate': 0.09322762674116546, 'num_leaves': 32, 'max_depth': 5, 'min_data_in_leaf': 99, 'feature_fraction': 0.7042239991443616}

@@ -26,16 +26,14 @@ X = X.drop(columns=["point_winner"])
 print("Splitting data into train and test sets...")
 X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=random_seed, stratify=y)
 print("Training Random Forest with improved hyperparameters...")
-print("  - Using class_weight='balanced' to handle class imbalance")
-print("  - n_estimators=250 (increased from 200)")
-print("  - max_depth=16 (decreased from 25)")
-
+print("  - n_estimators=290 (increased from 250)")
+print("  - max_depth=23 (increased from 16)")
+print("  - min_samples_split=17 (decreased from 20)")
 rf = RandomForestClassifier(
-    n_estimators=250,
-    max_depth=16,
-    min_samples_split=20,
-    min_samples_leaf=2,
-    class_weight='balanced',
+    n_estimators=290,
+    max_depth=23,
+    min_samples_split=17,
+    min_samples_leaf=3,
     n_jobs=4,
     random_state=random_seed
 )
@@ -79,3 +77,5 @@ with open(FEATURE_COLUMNS_LPWP, "wb") as f:
 
 print(f"Model saved to {RANDOM_FOREST_LPWP_MODEL}")
 print(f"Feature columns saved to {FEATURE_COLUMNS_LPWP}")
+
+# Trial 16 finished with value: 0.7634751120112931 and parameters: {'max_depth': 23, 'n_estimators': 290, 'min_samples_split': 17, 'min_samples_leaf': 3}. Best is trial 16 with value: 0.7634751120112931.

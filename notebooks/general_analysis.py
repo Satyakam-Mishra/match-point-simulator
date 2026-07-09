@@ -1,14 +1,19 @@
-"""This id tehn feature generating code for the Best Return Based on Serve model"""
+"""This is the general analysis of the dataset."""
 
-# imports
+# Import necessary libraries
 import pandas as pd
-from config import FINAL_CLEANED_VALIDATED_DATA, BEST_RETURN_BASED_ON_SERVE_DATASET
 import numpy as np
-from pydantic import BaseModel, ValidationError
-import rally_parser_helpers as rph
-from tqdm import tqdm
+import matplotlib.pyplot as plt
+import seaborn as sns
+from ..src.config import FINAL_CLEANED_VALIDATED_DATA
 
-"""This is for model 1. The live point win probability model. We will generate the dataset for this model here. """
+# importing some necessary functions for analysis
+
+
+# Load the dataset
+dataset = pd.read_csv(FINAL_CLEANED_VALIDATED_DATA)
+
+# Helper functions for analysis
 
 ground_strokes_mapping = {'f': 0, 'b': 1, 's': 2, 'r': 3, 'v': 4, 'o': 5, 'l': 6, 'm': 7, 'z': 8, 'j': 9, 'q': 10, 't': 11, 'p': 12, 'u': 13, 'y': 14}
 
@@ -72,14 +77,45 @@ def point_parser(point):
                 return np.nan, np.nan # return NaN if the point string is not in the mapping
 
     return np.nan, np.nan # return NaN if the point string is not in the mapping
+
+class LivePointWinProbabilityDataset(BaseModel):
+    pl_1_hand: int
+    pl_2_hand: int
+    surfacehard: int
+    surfaceclay: int
+    surfacegrass: int
+    gender: int
+    best_of: int
+    point_number: int
+    set1: int
+    set2: int
+    game1: int
+    game2: int
+    player_1_point: int
+    player_2_point: int
+    svr: int
+    point_winner: int
     
 def parse_serve_rph_live_point_win_probability(dataset):
     """We need to parse the first_serve and seceond_serve columns to get the features for the model. We will use the rally_parser_helpers.py file to parse these columns. We will create new columns for each feature that we want to extract from the first_serve and second_serve columns. """
     
-    # Initialize base columns with NaN for all rows - only serve and return data
+    # Initialize base columns with NaN for all rows
     base_columns = ['first_serve_in', 'rally_length', 'double_fault', 
                     'serve_location', 'serve_ace', 'serve_error_location', 'serve_shank_info', 'serve_position_info',
-                    'return_shot_type', 'return_direction', 'return_depth', 'return_error_location', 'return_error_type', 'return_shank_info', 'return_position_info', 'return_winner']
+                    'return_shot_type', 'return_direction', 'return_depth', 'return_error_location', 'return_error_type', 'return_shank_info', 'return_position_info', 'return_winner',
+                    'serve_plus_one_shot_type', 'serve_plus_one_direction', 'serve_plus_one_depth', 'serve_plus_one_error_location', 'serve_plus_one_error_type', 'serve_plus_one_shank_info', 'serve_plus_one_position_info', 'serve_plus_one_winner']
+    
+    # Add shot columns for shots 4-6 from the front
+    for i in range(4, 7):
+        base_columns.extend([f'shot_{i}_shot_type', f'shot_{i}_shot_direction', f'shot_{i}_shot_depth', 
+                            f'shot_{i}_error_location', f'shot_{i}_error_type', f'shot_{i}_winner', 
+                            f'shot_{i}_shank_info', f'shot_{i}_position_info'])
+    
+    # Add shot columns for shots last_1 to last_10 from the end
+    for j in range(1, 11):
+        base_columns.extend([f'shot_last_{j}_shot_type', f'shot_last_{j}_shot_direction', f'shot_last_{j}_shot_depth',
+                            f'shot_last_{j}_error_location', f'shot_last_{j}_error_type', f'shot_last_{j}_winner',
+                            f'shot_last_{j}_shank_info', f'shot_last_{j}_position_info'])
     
     # Initialize all columns at once using concat for better performance
     new_cols_dict = {}
@@ -168,6 +204,44 @@ def parse_serve_rph_live_point_win_probability(dataset):
                         row_results["return_shank_info"] = safe_bool_to_float(return_info.get("shank_info"))
                         row_results["return_position_info"] = safe_map_get(return_info.get("position_info"), position_information_mapping)
                         row_results["return_winner"] = safe_bool_to_float(return_info.get("winner"))
+                        
+                elif i == 2:  # Serve + 1
+                    serve_plus_one_info = rally[i]
+                    if isinstance(serve_plus_one_info, dict):
+                        row_results["serve_plus_one_shot_type"] = safe_map_get(serve_plus_one_info.get("shot_type"), ground_strokes_mapping)
+                        row_results["serve_plus_one_direction"] = serve_plus_one_info.get("shot_direction")
+                        row_results["serve_plus_one_depth"] = serve_plus_one_info.get("shot_depth")
+                        row_results["serve_plus_one_error_location"] = safe_map_get(serve_plus_one_info.get("error_location"), error_location_mapping)
+                        row_results["serve_plus_one_error_type"] = safe_map_get(serve_plus_one_info.get("error_type"), terminal_symbol_mapping)
+                        row_results["serve_plus_one_shank_info"] = safe_bool_to_float(serve_plus_one_info.get("shank_info"))
+                        row_results["serve_plus_one_position_info"] = safe_map_get(serve_plus_one_info.get("position_info"), position_information_mapping)
+                        row_results["serve_plus_one_winner"] = safe_bool_to_float(serve_plus_one_info.get("winner"))
+                        
+                elif 3 <= i <= 5:  # Shots 4-6 (indices 3-5 in rally array)
+                    shot = rally[i]
+                    if isinstance(shot, dict):
+                        shot_num = i + 1  # Convert to shot number (1-indexed)
+                        row_results[f'shot_{shot_num}_shot_type'] = safe_map_get(shot.get("shot_type"), ground_strokes_mapping)
+                        row_results[f'shot_{shot_num}_shot_direction'] = shot.get("shot_direction")
+                        row_results[f'shot_{shot_num}_shot_depth'] = shot.get("shot_depth")
+                        row_results[f'shot_{shot_num}_error_location'] = safe_map_get(shot.get("error_location"), error_location_mapping)
+                        row_results[f'shot_{shot_num}_error_type'] = safe_map_get(shot.get("error_type"), terminal_symbol_mapping)
+                        row_results[f'shot_{shot_num}_winner'] = safe_bool_to_float(shot.get("winner"))
+                        row_results[f'shot_{shot_num}_shank_info'] = safe_bool_to_float(shot.get("shank_info"))
+                        row_results[f'shot_{shot_num}_position_info'] = safe_map_get(shot.get("position_info"), position_information_mapping)
+                        
+                elif i >= rally_length - 10:  # Last 10 shots
+                    shot = rally[i]
+                    if isinstance(shot, dict):
+                        shot_distance = rally_length - i
+                        row_results[f'shot_last_{shot_distance}_shot_type'] = safe_map_get(shot.get("shot_type"), ground_strokes_mapping)
+                        row_results[f'shot_last_{shot_distance}_shot_direction'] = shot.get("shot_direction")
+                        row_results[f'shot_last_{shot_distance}_shot_depth'] = shot.get("shot_depth")
+                        row_results[f'shot_last_{shot_distance}_error_location'] = safe_map_get(shot.get("error_location"), error_location_mapping)
+                        row_results[f'shot_last_{shot_distance}_error_type'] = safe_map_get(shot.get("error_type"), terminal_symbol_mapping)
+                        row_results[f'shot_last_{shot_distance}_winner'] = safe_bool_to_float(shot.get("winner"))
+                        row_results[f'shot_last_{shot_distance}_shank_info'] = safe_bool_to_float(shot.get("shank_info"))
+                        row_results[f'shot_last_{shot_distance}_position_info'] = safe_map_get(shot.get("position_info"), position_information_mapping)
         except Exception as e:
             pass  # Silently skip rows with errors
         
@@ -194,90 +268,50 @@ def parse_serve_rph_live_point_win_probability(dataset):
     
     return dataset
 
-def feature_generator_brbs():
-    """This function will generate the features for the Best Return Based on Serve model. We will read the final cleaned validated data and then parse the first_serve and second_serve columns to get the features for the model. We will then save the dataset with the new features to a csv file. """
+def men_vs_women_number_of_points(dataset):
+    """Compare the number of points played by men and women."""
+    num_men = dataset[dataset["gender"] == "M"].shape[0]
+    num_women = dataset[dataset["gender"] == "W"].shape[0]
     
-    # Read the final cleaned validated data
-    dataset = pd.read_csv(FINAL_CLEANED_VALIDATED_DATA)
+    return num_men, num_women
+
+def clay_vs_grass_vs_hard_number_of_points(dataset):
+    """Compare the number of points played on clay, grass, and hard surfaces."""
+    num_clay = dataset[dataset["surface"] == "Clay"].shape[0]
+    num_grass = dataset[dataset["surface"] == "Grass"].shape[0]
+    num_hard = dataset[dataset["surface"] == "Hard"].shape[0]
     
-    # Now we dorp all the columns not needed by us that is all the columns which are not useful
-    dataset.drop(columns = ["match_id", "player_1", "player_2", "game_number", "tiebreak_set", "notes", "shot_validation"], inplace=True)
+    return num_clay, num_grass, num_hard
+
+def Left_handed_points_vs_Right_handed_points(dataset):
+    """Compare the number of points played by left-handed and right-handed players."""
+    num_left_handed = dataset[dataset["pl_0_hand"] == "L"].shape[0] + dataset[dataset["pl_1_hand"] == "L"].shape[0]
+    num_right_handed = dataset[dataset["pl_0_hand"] == "R"].shape[0] + dataset[dataset["pl_1_hand"] == "R"].shape[0]
     
-    # Now we create string to int mapping for the categorical variables. We will use one-hot encoding for the surface. We will use label encoding for the shot type and shot outcome.
+    return num_left_handed, num_right_handed
+
+def total_points(dataset):
+    """Calculate the total number of points in the dataset."""
+    return dataset.shape[0]
+
+def average_rally_length_per_point(dataset):
+    """Calculate the average number of shots per point."""
+    total_shots = sum(dataset["rally_length"])
+    total_points = dataset.shape[0]
+    return total_shots / total_points if total_points > 0 else 0
+
+def average_rally_length_by_surface(dataset):
+    """Calculate the average rally length for each surface type."""
+    return dataset.groupby("surface")["rally_length"].mean()
+
+def winner_vs_unforced_error_vs_forced_error(dataser):
     
-    # One-hot encoding pl_hand_1 and pl_hand_2
-    pl_hand_mapping = {'R': 0, 'L': 1}
-    dataset['pl_1_hand'] = dataset['pl_1_hand'].map(pl_hand_mapping)
-    dataset['pl_2_hand'] = dataset['pl_2_hand'].map(pl_hand_mapping)
-    
-    # One-hot encoding surface
-    surface_dummies = pd.get_dummies(dataset['surface'], prefix='surface')
-    dataset = pd.concat([dataset, surface_dummies], axis=1)
-    dataset.drop(columns=['surface'], inplace=True)
-    
-    #for gender, we will use label encoding. We will map M to 0 and W to 1.
-    
-    gender_mapping = {'M': 0, 'W': 1}
-    dataset['gender'] = dataset['gender'].map(gender_mapping)
-    
-    dataset[['player_0_point', 'player_1_point']] = dataset['points'].apply(lambda x: pd.Series(point_parser(x)))
-    
-    dataset.drop(columns=['points'], inplace=True)
-    
-    dataset.rename(columns={'surface_hard': 'surfacehard', 'surface_clay': 'surfaceclay', 'surface_grass': 'surfacegrass', 'pl_1_hand': 'pl_0_hand', 'pl_2_hand': 'pl_1_hand', 'set1': 'set0', 'set2': 'set1', 'game1': 'game0', 'game2': 'game1', 'Svr': 'svr'}, inplace=True)
-    
-    dataset['svr'] = dataset['svr'] - 1
-    dataset['point_winner'] = dataset['point_winner'] - 1
-    
-    # Now we will be finally parsing the first_serve and second_serve columns. As this is complicated we will use another function to implement this these columns.
-    
-    # adding a new column for is_tiebreaker. We see the score in the points as well as in the game score. However it is problematic in the case of next generation finals as the tiebreak starts at 3-3. So we so the following, if we see that the points are eiter 1-0 or 0-1 then we even set the previous 0-0 score row as tiebreaker.
-    
-    print("Detecting tiebreakers...")
-    # Use vectorized operations for performance on large datasets
-    p0 = dataset['player_0_point']
-    p1 = dataset['player_1_point']
-    
-    # Create boolean mask for tiebreaker conditions
-    is_tiebreaker = (
-        ((p0 == 1) & (p1 == 0)) |  # 1-0
-        ((p0 == 0) & (p1 == 1)) |  # 0-1
-        ((p0 == 2) & (p1 == 0)) |  # 2-0
-        ((p0 == 0) & (p1 == 2)) |  # 0-2
-        ((p0 == 3) & (p1 == 0)) |  # 3-0
-        ((p0 == 0) & (p1 == 3)) |  # 0-3
-        ((p0 == 4) & (p1 == 0)) |  # 4-0
-        ((p0 == 0) & (p1 == 4)) |  # 0-4
-        ((p0 == 5) & (p1 == 0)) |  # 5-0
-        ((p0 == 0) & (p1 == 5)) |  # 0-5
-        ((p0 == 6) & (p1 == 0)) |  # 6-0
-        ((p0 == 0) & (p1 == 6)) |  # 0-6
-        ((p0.isin([1, 2, 3, 4, 5, 6])) & (p1.isin([1, 2, 3, 4, 5, 6])))  # deuce points
-    )
-    
-    dataset['is_tiebreaker'] = is_tiebreaker
-    
-    # Handle previous row marking for (1,0) and (0,1) cases
-    previous_row_marker = ((p0.shift(-1) == 1) & (p1.shift(-1) == 0)) | ((p0.shift(-1) == 0) & (p1.shift(-1) == 1))
-    dataset.loc[previous_row_marker, 'is_tiebreaker'] = True
-    
+
+if __name__ == "__main__":
     dataset = parse_serve_rph_live_point_win_probability(dataset)
     
-    # We keep the data only relevant to our model.
+    num_men, num_women = men_vs_women_number_of_points(dataset)
+    num_clay, num_grass, num_hard = clay_vs_grass_vs_hard_number_of_points(dataset)
+    avg_rally_length_per_point = average_rally_length_per_point(dataset)
+    avg_rally_length_by_surface = average_rally_length_by_surface(dataset)
     
-    dataset.drop(columns=['best_of', 'point_number', 'set0', 'set1', 'game0', 'game1', 'first_serve', 'second_serve', 'rally_length', 'return_position_info', 'return_error_location', 'return_error_type', 'serve_ace', 'serve_error_location', 'return_winner', 'return_shank_info', 'serve_position_info'], inplace=True)
-    
-    # We remove all the rows in which the returner won due to a double fault.
-    dataset = dataset[~((dataset['double_fault'] == 1.0))]
-    # We remove all the rows in which the point is won by the server as we are only interested in the points won by the returner.
-    dataset = dataset[dataset['point_winner'] != dataset['svr']]
-    
-    dataset.drop(columns=['point_winner', 'double_fault'], inplace=True)
-    
-    
-    
-    # Save the dataset with the new features to a csv file
-    dataset.to_csv(BEST_RETURN_BASED_ON_SERVE_DATASET, index=False)
-    
-if __name__ == "__main__":
-    feature_generator_brbs()
