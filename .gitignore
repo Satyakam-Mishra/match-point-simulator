@@ -41,6 +41,7 @@ dataset/
 *.h5
 *.pt
 *.pth
+models_extra/
 
 # Environment
 .env
