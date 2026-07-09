@@ -86,3 +86,6 @@ print("Model, Encoder, and Feature Columns saved successfully!")
 
 # Best Trial Accuracy: 31.38%
 # Best Params: {'learning_rate': 0.09322762674116546, 'num_leaves': 32, 'max_depth': 5, 'min_data_in_leaf': 99, 'feature_fraction': 0.7042239991443616}
+
+
+# Trial 10 finished with value: 0.307546432756845 and parameters: {'learning_rate': 0.06403670195721561, 'num_leaves': 120, 'max_depth': 9, 'min_data_in_leaf': 100, 'feature_fraction': 0.9564206438121738}. Best is trial 10 with value: 0.307546432756845.

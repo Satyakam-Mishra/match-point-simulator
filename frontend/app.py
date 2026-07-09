@@ -9,7 +9,7 @@ import joblib
 # Add the src directory to the path to import modules FIRST
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 
-from config import RANDOM_FOREST_LPWP_MODEL, FEATURE_COLUMNS_LPWP, LIGHTGBM_NBS_MODEL, FEATURE_COLUMNS_NBS, XGBOOST_BRBS_MODEL, FEATURE_COLUMNS_BRBS, LABEL_ENCODERS_BRBS
+from config import RANDOM_FOREST_LPWP_MODEL, FEATURE_COLUMNS_LPWP, LIGHTGBM_NBS_MODEL, FEATURE_COLUMNS_NBS, LABEL_ENCODER_NBS, XGBOOST_BRBS_MODEL, FEATURE_COLUMNS_BRBS, LABEL_ENCODERS_BRBS
 
 # ============= PAGE CONFIGURATION =============
 st.set_page_config(
@@ -631,24 +631,27 @@ def show_nbs_predictor_page():
         """Load pre-trained NBS model from joblib files"""
         model_path = LIGHTGBM_NBS_MODEL
         features_path = FEATURE_COLUMNS_NBS
+        label_encoder_path = LABEL_ENCODER_NBS
         
         try:
             model = joblib.load(model_path)
             feature_columns = joblib.load(features_path)
+            label_encoder = joblib.load(label_encoder_path)
             st.success("✅ NBS Model loaded successfully!")
-            return model, feature_columns
+            return model, feature_columns, label_encoder
         except FileNotFoundError:
             st.error("❌ NBS Model files not found!")
             st.info("Please run `python src/nbs_model_05.py` from the project root to generate the model files.")
             st.info(f"Expected files:")
             st.info(f"  - {model_path}")
             st.info(f"  - {features_path}")
-            return None, []
+            st.info(f"  - {label_encoder_path}")
+            return None, [], None
         except Exception as e:
             st.error(f"❌ Error loading model: {e}")
-            return None, []
+            return None, [], None
     
-    model, feature_columns = load_nbs_model()
+    model, feature_columns, nbs_label_encoder = load_nbs_model()
     
     if model is None:
         st.stop()
@@ -683,21 +686,25 @@ def show_nbs_predictor_page():
         st.markdown("### **Current Match Score**")
         col1, col2, col3, col4 = st.columns(4)
         with col1:
+            set0 = st.number_input("Number of Sets Won (You)", min_value=0, max_value=2, value=0, key="nbs_set0")
             if is_tiebreaker:
                 player_0_point = st.number_input("Your Points (Tiebreak)", min_value=0, max_value=20, value=0, key="nbs_player_0_point")
             else:
                 player_0_point_str = st.selectbox("Your Points", ["0", "15", "30", "40", "AD"], key="nbs_player_0_point", index=0)
                 player_0_point = point_parser(player_0_point_str)
         with col2:
+            set1 = st.number_input("Number of Sets Won (Opponent)", min_value=0, max_value=2, value=0, key="nbs_set1")
             if is_tiebreaker:
                 player_1_point = st.number_input("Opponent Points (Tiebreak)", min_value=0, max_value=20, value=0, key="nbs_player_1_point")
             else:
                 player_1_point_str = st.selectbox("Opponent Points", ["0", "15", "30", "40", "AD"], key="nbs_player_1_point", index=0)
                 player_1_point = point_parser(player_1_point_str)
         with col3:
+            game0 = st.number_input("Number of Games Won (You)", min_value=0, max_value=7, value=0, key="nbs_game0")
             svr = st.selectbox("Role", ["Server", "Receiver"], key="nbs_svr")
             svr = 0 if svr == "Server" else 1
         with col4:
+            game1 = st.number_input("Number of Games Won (Opponent)", min_value=0, max_value=7, value=0, key="nbs_game1")
             surface = st.selectbox("Surface", ["Hard", "Clay", "Grass"], key="nbs_surface")
             surface_Hard = 1 if surface == "Hard" else 0
             surface_Clay = 1 if surface == "Clay" else 0
@@ -759,6 +766,8 @@ def show_nbs_predictor_page():
             
             # Determine if break point (set to 0 for now, could be enhanced with game/set data)
             is_breakpoint = 0.0
+            game_diff = game0 - game1
+            set_diff = set0 - set1
             
             # Create input dataframe with all features
             input_data = {
@@ -775,10 +784,10 @@ def show_nbs_predictor_page():
                 'player_1_point': player_1_point,
                 'is_tiebreaker': is_tiebreaker_float,
                 'point_diff': float(point_diff),
-                'game_diff': -1.0,  # Default value when not provided
-                'set_diff': -1.0,   # Default value when not provided
-                'is_deuce': is_deuce,
-                'is_breakpoint': is_breakpoint,
+                'game_diff': float(game_diff),
+                'set_diff': float(set_diff),
+                'is_deuce': float(is_deuce),
+                'is_breakpoint': float(is_breakpoint),
                 'first_serve_in': first_serve_in,
                 'shot_number': shot_number,
                 'prev_shot_type': prev_shot_type,
@@ -797,14 +806,17 @@ def show_nbs_predictor_page():
             input_df = pd.DataFrame([{col: input_data[col] for col in feature_columns}])
             
             try:
-                predictions = model.predict(input_df)[0]
+                pred_encoded = int(model.predict(input_df)[0])
                 probabilities = model.predict_proba(input_df)[0]
+                predictions = nbs_label_encoder.inverse_transform([pred_encoded])[0]
                 
                 st.markdown("---")
                 st.markdown("## 🎯 **Recommended Next Shot**")
                 
-                # Parse y_string to display shot information
+                # Parse label safely; some legacy labels may have only 2 parts
                 shot_parts = predictions.split('_')
+                while len(shot_parts) < 3:
+                    shot_parts.append('NA')
                 
                 col1, col2, col3 = st.columns(3)
                 
@@ -832,7 +844,8 @@ def show_nbs_predictor_page():
                 st.markdown("### **Top 3 Recommended Shots**")
                 
                 # Get unique predictions and their probabilities
-                unique_preds = model.classes_
+                unique_pred_ids = model.classes_
+                unique_preds = nbs_label_encoder.inverse_transform(unique_pred_ids.astype(int))
                 pred_data = pd.DataFrame({
                     'Shot Sequence': unique_preds,
                     'Probability (%)': probabilities * 100
@@ -843,6 +856,8 @@ def show_nbs_predictor_page():
                 for idx, (col, row) in enumerate(zip(cols, pred_data.itertuples())):
                     with col:
                         shot_parts = row[1].split('_')
+                        while len(shot_parts) < 3:
+                            shot_parts.append('NA')
                         shot_type_name = SHOT_TYPE_REVERSE.get(int(shot_parts[0]) if shot_parts[0] != 'NA' else -1, 'Unknown')
                         direction_name = DIRECTION_REVERSE.get(int(shot_parts[1]) if shot_parts[1] != 'NA' else -1, 'Unknown')
                         depth_name = DEPTH_REVERSE.get(int(shot_parts[2]) if shot_parts[2] != 'NA' else -1, 'Unknown')
