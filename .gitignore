@@ -21,7 +21,8 @@ var/
 wheels/
 *.egg-info/
 .installed.cfg
-*.egg
+*.eg
+*.pkl
 
 # Testing
 .pytest_cache/
