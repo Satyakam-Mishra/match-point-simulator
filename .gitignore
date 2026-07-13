@@ -21,8 +21,7 @@ var/
 wheels/
 *.egg-info/
 .installed.cfg
-*.eg
-*.pkl
+*.egg
 
 # Testing
 .pytest_cache/
@@ -42,6 +41,7 @@ dataset/
 *.h5
 *.pt
 *.pth
+*.pkl
 models/
 
 # Environment
