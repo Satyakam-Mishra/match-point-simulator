@@ -6,10 +6,11 @@ import sys
 import pickle
 import joblib
 
+
 # Add the src directory to the path to import modules FIRST
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 
-from config import RANDOM_FOREST_LPWP_MODEL, FEATURE_COLUMNS_LPWP, LIGHTGBM_NBS_MODEL, FEATURE_COLUMNS_NBS, LABEL_ENCODER_NBS, XGBOOST_BRBS_MODEL, FEATURE_COLUMNS_BRBS, LABEL_ENCODERS_BRBS
+from config import RANDOM_FOREST_LPWP_MODEL, FEATURE_COLUMNS_LPWP, LIGHTGBM_NBS_MODEL, FEATURE_COLUMNS_NBS, LABEL_ENCODER_NBS, XGBOOST_BRBS_MODEL, FEATURE_COLUMNS_BRBS, LABEL_ENCODERS_BRBS, FINAL_CLEANED_VALIDATED_DATA, GENERAL_ANALYSIS_PY
 
 # ============= PAGE CONFIGURATION =============
 st.set_page_config(
@@ -614,7 +615,207 @@ def show_analysis_page():
     
     st.title("📊 Match Analysis")
     st.markdown("---")
-    st.info("Match Analysis page coming soon! This will provide detailed statistics and trends from professional tennis matches.")
+    st.write("We provide the analysis of the extracted dataset so far. Graphs will be added next.")
+
+    @st.cache_data(show_spinner=False)
+    def load_analysis_dataset():
+        return pd.read_csv(FINAL_CLEANED_VALIDATED_DATA)
+
+    def _percentage_mask(series, values):
+        return series.isin(values)
+
+    try:
+        dataset = load_analysis_dataset()
+    except Exception as e:
+        st.error(f"Unable to load the analysis dataset: {e}")
+        st.stop()
+
+    if "Svr" in dataset.columns and "svr" not in dataset.columns:
+        dataset = dataset.rename(columns={"Svr": "svr"})
+
+    first_serve_series = dataset["first_serve"].fillna("").astype(str) if "first_serve" in dataset.columns else pd.Series([""] * len(dataset))
+    second_serve_series = dataset["second_serve"].fillna("").astype(str) if "second_serve" in dataset.columns else pd.Series([""] * len(dataset))
+    first_serve_in_mask = second_serve_series.str.strip().eq("") & first_serve_series.ne("")
+    rally_source = second_serve_series.where(~first_serve_in_mask, first_serve_series)
+    rally_length_series = rally_source.str.count(r"[fbsrvolmzjqtpuy]")
+
+    serve_source = second_serve_series.where(~first_serve_in_mask, first_serve_series)
+    serve_location_series = serve_source.str[0].map({"4": 4, "5": 5, "6": 6})
+
+    def points_ending_by_serve_vs_by_return_vs_by_serve_plus_one_vs_others(rally_lengths):
+        total_points = int(rally_lengths.shape[0])
+        if total_points == 0:
+            return {
+                "points_ending_by_serve_ratio": 0.0,
+                "points_ending_by_return_ratio": 0.0,
+                "points_ending_by_serve_plus_one_ratio": 0.0,
+                "points_ending_by_others_ratio": 0.0,
+                "points_ending_by_serve_count": 0,
+                "points_ending_by_return_count": 0,
+                "points_ending_by_serve_plus_one_count": 0,
+                "points_ending_by_others_count": 0,
+            }
+
+        points_ending_by_serve = int((rally_lengths == 1).sum())
+        points_ending_by_return = int((rally_lengths == 2).sum())
+        points_ending_by_serve_plus_one = int((rally_lengths == 3).sum())
+        points_ending_by_others = total_points - (
+            points_ending_by_serve + points_ending_by_return + points_ending_by_serve_plus_one
+        )
+
+        return {
+            "points_ending_by_serve_ratio": points_ending_by_serve / total_points,
+            "points_ending_by_return_ratio": points_ending_by_return / total_points,
+            "points_ending_by_serve_plus_one_ratio": points_ending_by_serve_plus_one / total_points,
+            "points_ending_by_others_ratio": points_ending_by_others / total_points,
+            "points_ending_by_serve_count": points_ending_by_serve,
+            "points_ending_by_return_count": points_ending_by_return,
+            "points_ending_by_serve_plus_one_count": points_ending_by_serve_plus_one,
+            "points_ending_by_others_count": points_ending_by_others,
+        }
+
+    total_points = len(dataset)
+    men_points = int(dataset[dataset["gender"] == "M"].shape[0]) if "gender" in dataset.columns else 0
+    women_points = int(dataset[dataset["gender"] == "W"].shape[0]) if "gender" in dataset.columns else 0
+
+    surface_counts = dataset["surface"].value_counts().reindex(["Hard", "Clay", "Grass"], fill_value=0) if "surface" in dataset.columns else pd.Series([0, 0, 0], index=["Hard", "Clay", "Grass"])
+    avg_rally_length = float(rally_length_series.mean()) if not rally_length_series.empty else 0.0
+    avg_rally_by_surface = pd.DataFrame({"surface": dataset["surface"], "rally_length": rally_length_series}).groupby("surface")["rally_length"].mean().reindex(["Hard", "Clay", "Grass"]) if "surface" in dataset.columns else pd.Series(dtype=float)
+
+    if {"point_winner", "svr"}.issubset(dataset.columns):
+        server_won_mask = pd.to_numeric(dataset["point_winner"], errors="coerce") == pd.to_numeric(dataset["svr"], errors="coerce")
+        first_serve_win_rate = float(server_won_mask[first_serve_in_mask].mean() * 100) if first_serve_in_mask.any() else 0.0
+        second_serve_win_rate = float(server_won_mask[~first_serve_in_mask].mean() * 100) if (~first_serve_in_mask).any() else 0.0
+        first_serve_in_rate = float(first_serve_in_mask.mean() * 100)
+    else:
+        first_serve_win_rate = 0.0
+        second_serve_win_rate = 0.0
+        first_serve_in_rate = 0.0
+
+    serve_location_counts = serve_location_series.value_counts().reindex([4, 5, 6], fill_value=0)
+    points_ending_ratios = points_ending_by_serve_vs_by_return_vs_by_serve_plus_one_vs_others(rally_length_series)
+
+    gender_chart_df = pd.DataFrame({
+        "Gender": ["Men", "Women"],
+        "Points": [men_points, women_points],
+    }).set_index("Gender")
+
+    surface_chart_df = pd.DataFrame({
+        "Surface": surface_counts.index,
+        "Points": surface_counts.values,
+    }).set_index("Surface")
+
+    rally_chart_df = pd.DataFrame({
+        "Surface": avg_rally_by_surface.index if not avg_rally_by_surface.empty else ["Hard", "Clay", "Grass"],
+        "Average Rally Length": avg_rally_by_surface.values if not avg_rally_by_surface.empty else [0, 0, 0],
+    }).set_index("Surface")
+
+    serve_location_chart_df = pd.DataFrame({
+        "Serve Location": ["Wide", "Body/Line", "T"],
+        "Points": serve_location_counts.values,
+    }).set_index("Serve Location")
+
+    serving_win_chart_df = pd.DataFrame({
+        "Serve Phase": ["First Serve", "Second Serve"],
+        "Win Rate (%)": [first_serve_win_rate, second_serve_win_rate],
+    }).set_index("Serve Phase")
+
+    points_ending_chart_df = pd.DataFrame({
+        "Ending Type": ["Serve", "Return", "Serve + One", "Others"],
+        "Count": [
+            points_ending_ratios["points_ending_by_serve_count"],
+            points_ending_ratios["points_ending_by_return_count"],
+            points_ending_ratios["points_ending_by_serve_plus_one_count"],
+            points_ending_ratios["points_ending_by_others_count"],
+        ],
+        "Ratio (%)": [
+            points_ending_ratios["points_ending_by_serve_ratio"] * 100,
+            points_ending_ratios["points_ending_by_return_ratio"] * 100,
+            points_ending_ratios["points_ending_by_serve_plus_one_ratio"] * 100,
+            points_ending_ratios["points_ending_by_others_ratio"] * 100,
+        ],
+    }).set_index("Ending Type")
+
+    st.markdown("### Key Metrics")
+    col1, col2, col3, col4 = st.columns(4)
+    with col1:
+        st.metric("Total Points", f"{total_points:,}")
+    with col2:
+        st.metric("Average Rally Length", f"{avg_rally_length:.2f}")
+    with col3:
+        st.metric("First Serve In", f"{first_serve_in_rate:.1f}%")
+    with col4:
+        st.metric("Server Points Won on First Serve", f"{first_serve_win_rate:.1f}%")
+
+    st.markdown("### Current Extracted Snapshot")
+    snap_col1, snap_col2 = st.columns(2)
+    with snap_col1:
+        st.subheader("Gender Split")
+        gender_df = pd.DataFrame({
+            "Gender": ["Men", "Women"],
+            "Points": [men_points, women_points],
+        })
+        st.dataframe(gender_df, use_container_width=True, hide_index=True)
+
+        st.subheader("Surface Split")
+        surface_df = pd.DataFrame({
+            "Surface": surface_counts.index,
+            "Points": surface_counts.values,
+        })
+        st.dataframe(surface_df, use_container_width=True, hide_index=True)
+
+    with snap_col2:
+        st.subheader("Average Rally Length by Surface")
+        if not avg_rally_by_surface.empty:
+            rally_df = avg_rally_by_surface.reset_index()
+            rally_df.columns = ["Surface", "Average Rally Length"]
+            st.dataframe(rally_df, use_container_width=True, hide_index=True)
+        else:
+            st.info("Rally length data is not available yet.")
+
+        st.subheader("Serve Location Split")
+        serve_location_df = pd.DataFrame({
+            "Serve Location": ["Wide", "Body/Line", "T"],
+            "Points": serve_location_counts.values,
+        })
+        st.dataframe(serve_location_df, use_container_width=True, hide_index=True)
+
+    st.markdown("### Serving Summary")
+    summary_col1, summary_col2 = st.columns(2)
+    with summary_col1:
+        st.metric("Points Won on Second Serve", f"{second_serve_win_rate:.1f}%")
+    with summary_col2:
+        st.metric("Points Ending by Serve / Return / Serve + One / Others", f"{points_ending_ratios['points_ending_by_serve_ratio'] * 100:.1f}% / {points_ending_ratios['points_ending_by_return_ratio'] * 100:.1f}% / {points_ending_ratios['points_ending_by_serve_plus_one_ratio'] * 100:.1f}% / {points_ending_ratios['points_ending_by_others_ratio'] * 100:.1f}%")
+
+    st.markdown("### Visual Summary")
+    st.caption("The charts below mirror the summary tables above so the numbers and visuals stay aligned.")
+
+    vis_row1_col1, vis_row1_col2 = st.columns(2)
+    with vis_row1_col1:
+        st.subheader("Gender Split")
+        st.bar_chart(gender_chart_df)
+    with vis_row1_col2:
+        st.subheader("Surface Split")
+        st.bar_chart(surface_chart_df)
+
+    vis_row2_col1, vis_row2_col2 = st.columns(2)
+    with vis_row2_col1:
+        st.subheader("Average Rally Length by Surface")
+        st.bar_chart(rally_chart_df)
+    with vis_row2_col2:
+        st.subheader("Serve Location Split")
+        st.bar_chart(serve_location_chart_df)
+
+    vis_row3_col1, vis_row3_col2 = st.columns(2)
+    with vis_row3_col1:
+        st.subheader("First vs Second Serve Win Rate")
+        st.bar_chart(serving_win_chart_df)
+    with vis_row3_col2:
+        st.subheader("Points Ending Breakdown")
+        st.bar_chart(points_ending_chart_df[["Ratio (%)"]])
+        st.dataframe(points_ending_chart_df, use_container_width=True)
+    
+    
 
 def show_nbs_predictor_page():
     """Display the next best shot predictor"""
@@ -808,17 +1009,23 @@ def show_nbs_predictor_page():
             try:
                 pred_encoded = int(model.predict(input_df)[0])
                 probabilities = model.predict_proba(input_df)[0]
+                raw_scores = model.predict(input_df, raw_score=True)[0]
+                ranked_class_indices = np.argsort(raw_scores)[::-1]
+                rank_score_by_class = {
+                    int(class_index): 100.0 * (len(raw_scores) - rank_index) / len(raw_scores)
+                    for rank_index, class_index in enumerate(ranked_class_indices)
+                }
                 predictions = nbs_label_encoder.inverse_transform([pred_encoded])[0]
                 
                 st.markdown("---")
                 st.markdown("## 🎯 **Recommended Next Shot**")
                 
-                # Parse label safely; some legacy labels may have only 2 parts
+                # Parse label safely; the trained model predicts shot type and direction only
                 shot_parts = predictions.split('_')
-                while len(shot_parts) < 3:
+                while len(shot_parts) < 2:
                     shot_parts.append('NA')
                 
-                col1, col2, col3 = st.columns(3)
+                col1, col2 = st.columns(2)
                 
                 with col1:
                     if shot_parts[0] != 'NA':
@@ -832,40 +1039,38 @@ def show_nbs_predictor_page():
                         shot_dir_name = DIRECTION_REVERSE.get(shot_dir_num, 'Unknown')
                         st.info(f"**Recommended Direction**\n{shot_dir_name.title()}")
                 
-                with col3:
-                    if shot_parts[2] != 'NA':
-                        shot_depth_num = int(shot_parts[2])
-                        shot_depth_name = DEPTH_REVERSE.get(shot_depth_num, 'Unknown')
-                        st.info(f"**Recommended Depth**\n{shot_depth_name.title()}")
-                
                 st.markdown("---")
                 
-                # Display top 3 possible shots with probabilities
+                # Display top 3 possible shots with rank-based scores
                 st.markdown("### **Top 3 Recommended Shots**")
                 
-                # Get unique predictions and their probabilities
+                # Get unique predictions and map them to a rank score for display
                 unique_pred_ids = model.classes_
                 unique_preds = nbs_label_encoder.inverse_transform(unique_pred_ids.astype(int))
                 pred_data = pd.DataFrame({
                     'Shot Sequence': unique_preds,
-                    'Probability (%)': probabilities * 100
-                }).sort_values('Probability (%)', ascending=False).head(3)
+                    'Rank Score': [rank_score_by_class.get(int(class_id), 0.0) for class_id in unique_pred_ids.astype(int)]
+                }).sort_values('Rank Score', ascending=False).head(3)
                 
                 # Display as cards
                 cols = st.columns(3)
                 for idx, (col, row) in enumerate(zip(cols, pred_data.itertuples())):
                     with col:
                         shot_parts = row[1].split('_')
-                        while len(shot_parts) < 3:
+                        while len(shot_parts) < 2:
                             shot_parts.append('NA')
                         shot_type_name = SHOT_TYPE_REVERSE.get(int(shot_parts[0]) if shot_parts[0] != 'NA' else -1, 'Unknown')
                         direction_name = DIRECTION_REVERSE.get(int(shot_parts[1]) if shot_parts[1] != 'NA' else -1, 'Unknown')
-                        depth_name = DEPTH_REVERSE.get(int(shot_parts[2]) if shot_parts[2] != 'NA' else -1, 'Unknown')
-                        st.info(f"**#{idx+1} ({row[2]:.1f}%)**\n\n{shot_type_name.title()} • {direction_name.title()} • {depth_name.title()}")
+                        st.info(f"**#{idx+1} (Score {row[2]:.1f})**\n\n{shot_type_name.title()} • {direction_name.title()}")
                 
                 st.markdown("### **Shot Sequence Breakdown**")
                 st.markdown(f"**Full Prediction:** `{predictions}`")
-                st.markdown(f"**Confidence:** {max(probabilities) * 100:.2f}%")
+                top_scores = pd.Series(rank_score_by_class).sort_values(ascending=False).head(3)
+                st.markdown(f"**Top Class Score:** {top_scores.iloc[0]:.1f}")
+                st.caption(
+                    f"Top 3 rank scores: {top_scores.iloc[0]:.1f}, {top_scores.iloc[1]:.1f}{', ' + f'{top_scores.iloc[2]:.1f}' if len(top_scores) > 2 else ''}"
+                )
+                st.caption("These are rank-based display scores, not calibrated probabilities. The raw LightGBM probabilities remain very peaked.")
             
             except Exception as e:
                 st.error(f"Error making prediction: {str(e)}")

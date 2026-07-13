@@ -1,11 +1,28 @@
 """This is the general analysis of the dataset."""
 
 # Import necessary libraries
+from pathlib import Path
+import sys
+
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
-from ..src.config import FINAL_CLEANED_VALIDATED_DATA
+from pydantic import BaseModel
+from tqdm import tqdm
+
+try:
+    from src.config import FINAL_CLEANED_VALIDATED_DATA
+    import src.rally_parser_helpers as rph
+except ImportError:
+    CURRENT_DIR = Path(__file__).resolve().parent
+    PROJECT_ROOT = CURRENT_DIR.parent
+    SRC_DIR = PROJECT_ROOT / "src"
+    if str(SRC_DIR) not in sys.path:
+        sys.path.insert(0, str(SRC_DIR))
+
+    from config import FINAL_CLEANED_VALIDATED_DATA
+    import rally_parser_helpers as rph
 
 # importing some necessary functions for analysis
 
@@ -304,8 +321,48 @@ def average_rally_length_by_surface(dataset):
     """Calculate the average rally length for each surface type."""
     return dataset.groupby("surface")["rally_length"].mean()
 
-def winner_vs_unforced_error_vs_forced_error(dataser):
+def winner_vs_unforced_error_vs_forced_error(dataset):
+    pass
+
+def percentage_of_points_won_by_first_serve(dataset):
+    """Calculate the percentage of points won by the player who served first."""
+    total_first_serve_points = dataset[dataset["first_serve_in"] == True].shape[0]
+    points_won_by_first_serve = dataset[dataset["point_winner"] == dataset["svr"]].shape[0]
+    return (points_won_by_first_serve / total_first_serve_points) * 100 if total_first_serve_points > 0 else 0
+
+def percentage_of_points_won_by_second_serve(dataset):
+    """Calculate the percentage of points won by the player who served second."""
+    total_second_serve_points = dataset[dataset["first_serve_in"] == False].shape[0]
+    points_won_by_second_serve = dataset[dataset["point_winner"] == dataset["svr"]].shape[0]
+    return (points_won_by_second_serve / total_second_serve_points) * 100 if total_second_serve_points > 0 else 0
+
+def ratio_wide_serve_body_serve_T_serve(dataset):
+    """Calculate the ratio of wide serves, body serves, and T serves."""
+    total_serves = dataset.shape[0]
+    wide_serves = dataset[dataset["serve_location"] == 4].shape[0]
+    body_serves = dataset[dataset["serve_location"] == 5].shape[0]
+    t_serves = dataset[dataset["serve_location"] == 6].shape[0]
     
+    return {
+        "wide_serve_ratio": wide_serves / total_serves if total_serves > 0 else 0,
+        "body_serve_ratio": body_serves / total_serves if total_serves > 0 else 0,
+        "t_serve_ratio": t_serves / total_serves if total_serves > 0 else 0
+    }
+
+def points_ending_by_serve_vs_by_return_vs_by_serve_plus_one_vs_others(dataset):
+    """Calculate the percentage of points ending by serve, return, serve+1, and others."""
+    total_points = dataset.shape[0]
+    points_ending_by_serve = dataset[dataset["rally_length"] == 1].shape[0]
+    points_ending_by_return = dataset[dataset["rally_length"] == 2].shape[0]
+    points_ending_by_serve_plus_one = dataset[dataset["rally_length"] == 3].shape[0]
+    points_ending_by_others = total_points - (points_ending_by_serve + points_ending_by_return + points_ending_by_serve_plus_one)
+    
+    return {
+        "points_ending_by_serve_ratio": points_ending_by_serve / total_points if total_points > 0 else 0,
+        "points_ending_by_return_ratio": points_ending_by_return / total_points if total_points > 0 else 0,
+        "points_ending_by_serve_plus_one_ratio": points_ending_by_serve_plus_one / total_points if total_points > 0 else 0,
+        "points_ending_by_others_ratio": points_ending_by_others / total_points if total_points > 0 else 0
+    }
 
 if __name__ == "__main__":
     dataset = parse_serve_rph_live_point_win_probability(dataset)
@@ -314,4 +371,7 @@ if __name__ == "__main__":
     num_clay, num_grass, num_hard = clay_vs_grass_vs_hard_number_of_points(dataset)
     avg_rally_length_per_point = average_rally_length_per_point(dataset)
     avg_rally_length_by_surface = average_rally_length_by_surface(dataset)
-    
+    percentage_first_serve_points_won = percentage_of_points_won_by_first_serve(dataset)
+    percentage_second_serve_points_won = percentage_of_points_won_by_second_serve(dataset)
+    serve_ratios = ratio_wide_serve_body_serve_T_serve(dataset)
+    points_ending_ratios = points_ending_by_serve_vs_by_return_vs_by_serve_plus_one_vs_others(dataset)
