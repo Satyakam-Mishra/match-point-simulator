@@ -25,7 +25,7 @@ NEXT_BEST_SHOT_DATASET = os.path.join("dataset", "next_best_shot_dataset.csv")
 #model paths
 RANDOM_FOREST_LPWP_MODEL = os.path.join("models", "random_forest_lpwp_model.pkl")
 FEATURE_COLUMNS_LPWP = os.path.join("models", "feature_columns_lpwp.pkl")
-LIGHTGBM_NBS_MODEL = os.path.join("models", "nbs_lightgbm_model.pkl")
+NBS_MODEL = os.path.join("models", "nbs_lightgbm_model.pkl")
 FEATURE_COLUMNS_NBS = os.path.join("models", "feature_columns_nbs.pkl")
 LABEL_ENCODER_NBS = os.path.join("models", "nbs_label_encoder.pkl")
 XGBOOST_BRBS_MODEL = os.path.join("models", "brbs_xgboost_model.pkl")

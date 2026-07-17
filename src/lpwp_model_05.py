@@ -56,6 +56,7 @@ print(f"F1-Score (Weighted): {f1_weighted:.4f}")
 print(f"{'='*60}")
 print("\nDetailed Classification Report:")
 print(report)
+print("Precision, Recall, F1-Score:")
 
 # Print top 10 most important features
 print(f"\n{'='*60}")
@@ -79,3 +80,53 @@ print(f"Model saved to {RANDOM_FOREST_LPWP_MODEL}")
 print(f"Feature columns saved to {FEATURE_COLUMNS_LPWP}")
 
 # Trial 16 finished with value: 0.7634751120112931 and parameters: {'max_depth': 23, 'n_estimators': 290, 'min_samples_split': 17, 'min_samples_leaf': 3}. Best is trial 16 with value: 0.7634751120112931.
+
+"""
+Running Random Forest for Live Point Winning Probability...
+Loading dataset...
+Dataset loaded: 1629304 rows
+Filling missing values...
+Splitting data into train and test sets...
+Training Random Forest with improved hyperparameters...
+  - n_estimators=290 (increased from 250)
+  - max_depth=23 (increased from 16)
+  - min_samples_split=17 (decreased from 20)
+Evaluating model on test set...
+
+============================================================
+MODEL PERFORMANCE METRICS
+============================================================
+Test Accuracy: 0.7619
+F1-Score (Macro):   0.7618
+F1-Score (Weighted): 0.7619
+============================================================
+
+Detailed Classification Report:
+              precision    recall  f1-score   support
+
+           0       0.76      0.77      0.77    164493
+           1       0.76      0.75      0.76    161368
+
+    accuracy                           0.76    325861
+   macro avg       0.76      0.76      0.76    325861
+weighted avg       0.76      0.76      0.76    325861
+
+Precision, Recall, F1-Score:
+
+============================================================
+TOP 10 MOST IMPORTANT FEATURES
+============================================================
+                  feature  importance
+                      svr    0.285550
+           first_serve_in    0.095403
+serve_plus_one_shank_info    0.042498
+           return_depth_8    0.031546
+        shot_4_shank_info    0.025854
+        return_shank_info    0.025261
+           return_depth_9    0.025000
+        shot_5_shank_info    0.022819
+           return_depth_7    0.016918
+                    game0    0.016143
+Model saved to models/random_forest_lpwp_model.pkl
+Feature columns saved to models/feature_columns_lpwp.pkl
+"""

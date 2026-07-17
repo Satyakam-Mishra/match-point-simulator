@@ -244,20 +244,16 @@ def parse_serve_rph_live_point_win_probability(dataset):
     # Create new dataframe from shot rows
     print("Creating shot-level dataset...")
     shot_dataset = pd.DataFrame(all_shot_rows)
-    
-    # Create y_string column with shot characteristics and flag BEFORE dropping shot_flag
-    print("Creating y_string target variable...")
-    shot_dataset['y_string'] = shot_dataset.apply(y_string_creater, axis=1)
+
     
     # Drop current shot columns, keep only previous shot features
-    shot_cols_to_drop = ['shot_type', 'shot_direction', 'shot_depth', 'shot_error_location', 'shot_error_type', 'shot_winner', 'shot_shank_info', 'shot_position_info', 'rally_length', ]
+    shot_cols_to_drop = ['shot_error_location', 'shot_error_type', 'shot_winner', 'shot_shank_info', 'shot_position_info', 'rally_length', ]
     shot_dataset.drop(columns=shot_cols_to_drop, inplace=True, errors='ignore')
     
     # Map rally_outcome: forced_error -> 1, winner -> 0
     outcome_mapping = {'forced_error': 1, 'winner': 0}
     shot_dataset['rally_outcome'] = shot_dataset['rally_outcome'].map(outcome_mapping)
-    
-    # Filter and drop columns after y_string is created
+
     shot_dataset = shot_dataset[shot_dataset['rally_outcome'].isin([0, 1])]
     shot_dataset = shot_dataset[shot_dataset['shot_flag'].isin(['SETUP', 'DECISIVE'])]
     shot_dataset.drop(columns=['shot_flag', 'set0', 'set1', 'game0', 'game1', 'point_winner'], inplace=True, errors='ignore')
@@ -266,36 +262,7 @@ def parse_serve_rph_live_point_win_probability(dataset):
     unwanted_cols = ['rally_length', 'prev_shot_error_location', 'prev_shot_error_type', 'prev_shot_winner', 'outcome_shot_number', 'rally_outcome']
     shot_dataset.drop(columns=unwanted_cols, inplace=True, errors='ignore')
     
-    # Drop rows with any NA values in y_string
-    shot_dataset = shot_dataset[shot_dataset['y_string'].apply(lambda x: 'NA' not in x)]
-    
-    # Drop classes with support less than 1,000
-    class_counts = shot_dataset['y_string'].value_counts()
-    min_support_threshold = 1000
-    valid_classes = class_counts[class_counts >= min_support_threshold].index
-    shot_dataset = shot_dataset[shot_dataset['y_string'].isin(valid_classes)]
-    
-    print(f"Kept {len(valid_classes)} classes with support >= {min_support_threshold}")
-    print(f"Final dataset size: {len(shot_dataset)} rows")
-    
     return shot_dataset
-
-def y_string_creater(row):
-    """Create target string including shot type, direction, and depth (SETUP/DECISIVE in column only)
-    Format: shot_type_direction_depth
-    Example: 0_2_8 or 1_1_7
-    Includes whatever data is available, using 'NA' for missing values.
-    """
-    shot_type = row['shot_type']
-    shot_direction = row['shot_direction']
-    shot_depth = row['shot_depth']
-    
-    # Use available data, substitute 'NA' for missing values
-    type_str = str(int(shot_type)) if pd.notna(shot_type) else "NA"
-    direction_str = str(shot_direction) if pd.notna(shot_direction) else "NA"
-    depth_str = str(shot_depth) if pd.notna(shot_depth) else "NA"
-    
-    return f"{type_str}_{direction_str}"
 
 def feature_creation():
     """This function creates the features for the next best shot predictor model."""

@@ -5,12 +5,12 @@ import os
 import sys
 import pickle
 import joblib
-
+import itertools
 
 # Add the src directory to the path to import modules FIRST
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 
-from config import RANDOM_FOREST_LPWP_MODEL, FEATURE_COLUMNS_LPWP, LIGHTGBM_NBS_MODEL, FEATURE_COLUMNS_NBS, LABEL_ENCODER_NBS, XGBOOST_BRBS_MODEL, FEATURE_COLUMNS_BRBS, LABEL_ENCODERS_BRBS, FINAL_CLEANED_VALIDATED_DATA, GENERAL_ANALYSIS_PY
+from config import RANDOM_FOREST_LPWP_MODEL, FEATURE_COLUMNS_LPWP, LIVE_POINT_WIN_PROB_DATASET, NBS_MODEL, FEATURE_COLUMNS_NBS, LABEL_ENCODER_NBS, NEXT_BEST_SHOT_DATASET, XGBOOST_BRBS_MODEL, FEATURE_COLUMNS_BRBS, LABEL_ENCODERS_BRBS, BEST_RETURN_BASED_ON_SERVE_DATASET
 
 # ============= PAGE CONFIGURATION =============
 st.set_page_config(
@@ -106,6 +106,35 @@ def point_parser(point):
         elif point == 'AD':
             return 4
     return None
+
+
+def top_k_multioutput_predictions(model, input_df, k=3):
+    """Return top-k joint predictions from a MultiOutputClassifier using predict_proba.
+
+    Returns a list of tuples: (class_tuple, joint_probability)
+    where class_tuple contains the class values (as they appear in model.classes_)
+    """
+    # Get per-output class arrays and per-output probabilities for the single row
+    proba_list = model.predict_proba(input_df)
+    classes_list = model.classes_
+
+    # For a single sample, extract the first row of probabilities for each output
+    probs_per_output = [p[0] for p in proba_list]
+
+    # Build all combinations of index positions
+    index_ranges = [range(len(cls)) for cls in classes_list]
+    combos = []
+    for idx_tuple in itertools.product(*index_ranges):
+        joint = 1.0
+        class_vals = []
+        for out_i, idx in enumerate(idx_tuple):
+            joint *= probs_per_output[out_i][idx]
+            class_vals.append(classes_list[out_i][idx])
+        combos.append((tuple(class_vals), joint))
+
+    # Sort by joint probability descending and return top k
+    combos.sort(key=lambda x: x[1], reverse=True)
+    return combos[:k]
 
 def tiebreaker_point_parser(point):
     """Parse tiebreaker points (0-6+)"""
@@ -615,207 +644,7 @@ def show_analysis_page():
     
     st.title("📊 Match Analysis")
     st.markdown("---")
-    st.write("We provide the analysis of the extracted dataset so far. Graphs will be added next.")
-
-    @st.cache_data(show_spinner=False)
-    def load_analysis_dataset():
-        return pd.read_csv(FINAL_CLEANED_VALIDATED_DATA)
-
-    def _percentage_mask(series, values):
-        return series.isin(values)
-
-    try:
-        dataset = load_analysis_dataset()
-    except Exception as e:
-        st.error(f"Unable to load the analysis dataset: {e}")
-        st.stop()
-
-    if "Svr" in dataset.columns and "svr" not in dataset.columns:
-        dataset = dataset.rename(columns={"Svr": "svr"})
-
-    first_serve_series = dataset["first_serve"].fillna("").astype(str) if "first_serve" in dataset.columns else pd.Series([""] * len(dataset))
-    second_serve_series = dataset["second_serve"].fillna("").astype(str) if "second_serve" in dataset.columns else pd.Series([""] * len(dataset))
-    first_serve_in_mask = second_serve_series.str.strip().eq("") & first_serve_series.ne("")
-    rally_source = second_serve_series.where(~first_serve_in_mask, first_serve_series)
-    rally_length_series = rally_source.str.count(r"[fbsrvolmzjqtpuy]")
-
-    serve_source = second_serve_series.where(~first_serve_in_mask, first_serve_series)
-    serve_location_series = serve_source.str[0].map({"4": 4, "5": 5, "6": 6})
-
-    def points_ending_by_serve_vs_by_return_vs_by_serve_plus_one_vs_others(rally_lengths):
-        total_points = int(rally_lengths.shape[0])
-        if total_points == 0:
-            return {
-                "points_ending_by_serve_ratio": 0.0,
-                "points_ending_by_return_ratio": 0.0,
-                "points_ending_by_serve_plus_one_ratio": 0.0,
-                "points_ending_by_others_ratio": 0.0,
-                "points_ending_by_serve_count": 0,
-                "points_ending_by_return_count": 0,
-                "points_ending_by_serve_plus_one_count": 0,
-                "points_ending_by_others_count": 0,
-            }
-
-        points_ending_by_serve = int((rally_lengths == 1).sum())
-        points_ending_by_return = int((rally_lengths == 2).sum())
-        points_ending_by_serve_plus_one = int((rally_lengths == 3).sum())
-        points_ending_by_others = total_points - (
-            points_ending_by_serve + points_ending_by_return + points_ending_by_serve_plus_one
-        )
-
-        return {
-            "points_ending_by_serve_ratio": points_ending_by_serve / total_points,
-            "points_ending_by_return_ratio": points_ending_by_return / total_points,
-            "points_ending_by_serve_plus_one_ratio": points_ending_by_serve_plus_one / total_points,
-            "points_ending_by_others_ratio": points_ending_by_others / total_points,
-            "points_ending_by_serve_count": points_ending_by_serve,
-            "points_ending_by_return_count": points_ending_by_return,
-            "points_ending_by_serve_plus_one_count": points_ending_by_serve_plus_one,
-            "points_ending_by_others_count": points_ending_by_others,
-        }
-
-    total_points = len(dataset)
-    men_points = int(dataset[dataset["gender"] == "M"].shape[0]) if "gender" in dataset.columns else 0
-    women_points = int(dataset[dataset["gender"] == "W"].shape[0]) if "gender" in dataset.columns else 0
-
-    surface_counts = dataset["surface"].value_counts().reindex(["Hard", "Clay", "Grass"], fill_value=0) if "surface" in dataset.columns else pd.Series([0, 0, 0], index=["Hard", "Clay", "Grass"])
-    avg_rally_length = float(rally_length_series.mean()) if not rally_length_series.empty else 0.0
-    avg_rally_by_surface = pd.DataFrame({"surface": dataset["surface"], "rally_length": rally_length_series}).groupby("surface")["rally_length"].mean().reindex(["Hard", "Clay", "Grass"]) if "surface" in dataset.columns else pd.Series(dtype=float)
-
-    if {"point_winner", "svr"}.issubset(dataset.columns):
-        server_won_mask = pd.to_numeric(dataset["point_winner"], errors="coerce") == pd.to_numeric(dataset["svr"], errors="coerce")
-        first_serve_win_rate = float(server_won_mask[first_serve_in_mask].mean() * 100) if first_serve_in_mask.any() else 0.0
-        second_serve_win_rate = float(server_won_mask[~first_serve_in_mask].mean() * 100) if (~first_serve_in_mask).any() else 0.0
-        first_serve_in_rate = float(first_serve_in_mask.mean() * 100)
-    else:
-        first_serve_win_rate = 0.0
-        second_serve_win_rate = 0.0
-        first_serve_in_rate = 0.0
-
-    serve_location_counts = serve_location_series.value_counts().reindex([4, 5, 6], fill_value=0)
-    points_ending_ratios = points_ending_by_serve_vs_by_return_vs_by_serve_plus_one_vs_others(rally_length_series)
-
-    gender_chart_df = pd.DataFrame({
-        "Gender": ["Men", "Women"],
-        "Points": [men_points, women_points],
-    }).set_index("Gender")
-
-    surface_chart_df = pd.DataFrame({
-        "Surface": surface_counts.index,
-        "Points": surface_counts.values,
-    }).set_index("Surface")
-
-    rally_chart_df = pd.DataFrame({
-        "Surface": avg_rally_by_surface.index if not avg_rally_by_surface.empty else ["Hard", "Clay", "Grass"],
-        "Average Rally Length": avg_rally_by_surface.values if not avg_rally_by_surface.empty else [0, 0, 0],
-    }).set_index("Surface")
-
-    serve_location_chart_df = pd.DataFrame({
-        "Serve Location": ["Wide", "Body/Line", "T"],
-        "Points": serve_location_counts.values,
-    }).set_index("Serve Location")
-
-    serving_win_chart_df = pd.DataFrame({
-        "Serve Phase": ["First Serve", "Second Serve"],
-        "Win Rate (%)": [first_serve_win_rate, second_serve_win_rate],
-    }).set_index("Serve Phase")
-
-    points_ending_chart_df = pd.DataFrame({
-        "Ending Type": ["Serve", "Return", "Serve + One", "Others"],
-        "Count": [
-            points_ending_ratios["points_ending_by_serve_count"],
-            points_ending_ratios["points_ending_by_return_count"],
-            points_ending_ratios["points_ending_by_serve_plus_one_count"],
-            points_ending_ratios["points_ending_by_others_count"],
-        ],
-        "Ratio (%)": [
-            points_ending_ratios["points_ending_by_serve_ratio"] * 100,
-            points_ending_ratios["points_ending_by_return_ratio"] * 100,
-            points_ending_ratios["points_ending_by_serve_plus_one_ratio"] * 100,
-            points_ending_ratios["points_ending_by_others_ratio"] * 100,
-        ],
-    }).set_index("Ending Type")
-
-    st.markdown("### Key Metrics")
-    col1, col2, col3, col4 = st.columns(4)
-    with col1:
-        st.metric("Total Points", f"{total_points:,}")
-    with col2:
-        st.metric("Average Rally Length", f"{avg_rally_length:.2f}")
-    with col3:
-        st.metric("First Serve In", f"{first_serve_in_rate:.1f}%")
-    with col4:
-        st.metric("Server Points Won on First Serve", f"{first_serve_win_rate:.1f}%")
-
-    st.markdown("### Current Extracted Snapshot")
-    snap_col1, snap_col2 = st.columns(2)
-    with snap_col1:
-        st.subheader("Gender Split")
-        gender_df = pd.DataFrame({
-            "Gender": ["Men", "Women"],
-            "Points": [men_points, women_points],
-        })
-        st.dataframe(gender_df, use_container_width=True, hide_index=True)
-
-        st.subheader("Surface Split")
-        surface_df = pd.DataFrame({
-            "Surface": surface_counts.index,
-            "Points": surface_counts.values,
-        })
-        st.dataframe(surface_df, use_container_width=True, hide_index=True)
-
-    with snap_col2:
-        st.subheader("Average Rally Length by Surface")
-        if not avg_rally_by_surface.empty:
-            rally_df = avg_rally_by_surface.reset_index()
-            rally_df.columns = ["Surface", "Average Rally Length"]
-            st.dataframe(rally_df, use_container_width=True, hide_index=True)
-        else:
-            st.info("Rally length data is not available yet.")
-
-        st.subheader("Serve Location Split")
-        serve_location_df = pd.DataFrame({
-            "Serve Location": ["Wide", "Body/Line", "T"],
-            "Points": serve_location_counts.values,
-        })
-        st.dataframe(serve_location_df, use_container_width=True, hide_index=True)
-
-    st.markdown("### Serving Summary")
-    summary_col1, summary_col2 = st.columns(2)
-    with summary_col1:
-        st.metric("Points Won on Second Serve", f"{second_serve_win_rate:.1f}%")
-    with summary_col2:
-        st.metric("Points Ending by Serve / Return / Serve + One / Others", f"{points_ending_ratios['points_ending_by_serve_ratio'] * 100:.1f}% / {points_ending_ratios['points_ending_by_return_ratio'] * 100:.1f}% / {points_ending_ratios['points_ending_by_serve_plus_one_ratio'] * 100:.1f}% / {points_ending_ratios['points_ending_by_others_ratio'] * 100:.1f}%")
-
-    st.markdown("### Visual Summary")
-    st.caption("The charts below mirror the summary tables above so the numbers and visuals stay aligned.")
-
-    vis_row1_col1, vis_row1_col2 = st.columns(2)
-    with vis_row1_col1:
-        st.subheader("Gender Split")
-        st.bar_chart(gender_chart_df)
-    with vis_row1_col2:
-        st.subheader("Surface Split")
-        st.bar_chart(surface_chart_df)
-
-    vis_row2_col1, vis_row2_col2 = st.columns(2)
-    with vis_row2_col1:
-        st.subheader("Average Rally Length by Surface")
-        st.bar_chart(rally_chart_df)
-    with vis_row2_col2:
-        st.subheader("Serve Location Split")
-        st.bar_chart(serve_location_chart_df)
-
-    vis_row3_col1, vis_row3_col2 = st.columns(2)
-    with vis_row3_col1:
-        st.subheader("First vs Second Serve Win Rate")
-        st.bar_chart(serving_win_chart_df)
-    with vis_row3_col2:
-        st.subheader("Points Ending Breakdown")
-        st.bar_chart(points_ending_chart_df[["Ratio (%)"]])
-        st.dataframe(points_ending_chart_df, use_container_width=True)
-    
-    
+    st.info("Match Analysis page coming soon! This will provide detailed statistics and trends from professional tennis matches.")
 
 def show_nbs_predictor_page():
     """Display the next best shot predictor"""
@@ -829,90 +658,86 @@ def show_nbs_predictor_page():
     # Load model (cached for performance)
     @st.cache_resource
     def load_nbs_model():
-        """Load pre-trained NBS model from joblib files"""
-        model_path = LIGHTGBM_NBS_MODEL
+        """Load pre-trained NBS model and label encoders from joblib files"""
+        model_path = NBS_MODEL
         features_path = FEATURE_COLUMNS_NBS
-        label_encoder_path = LABEL_ENCODER_NBS
-        
+        encoders_path = LABEL_ENCODER_NBS
+
         try:
             model = joblib.load(model_path)
             feature_columns = joblib.load(features_path)
-            label_encoder = joblib.load(label_encoder_path)
+            label_encoders = joblib.load(encoders_path)
             st.success("✅ NBS Model loaded successfully!")
-            return model, feature_columns, label_encoder
+            return model, feature_columns, label_encoders
         except FileNotFoundError:
             st.error("❌ NBS Model files not found!")
             st.info("Please run `python src/nbs_model_05.py` from the project root to generate the model files.")
             st.info(f"Expected files:")
             st.info(f"  - {model_path}")
             st.info(f"  - {features_path}")
-            st.info(f"  - {label_encoder_path}")
-            return None, [], None
+            st.info(f"  - {encoders_path}")
+            return None, [], {}
         except Exception as e:
             st.error(f"❌ Error loading model: {e}")
-            return None, [], None
-    
-    model, feature_columns, nbs_label_encoder = load_nbs_model()
-    
+            return None, [], {}
+
+    model, feature_columns, label_encoders = load_nbs_model()
+
     if model is None:
         st.stop()
-    
+
     tab1, tab2 = st.tabs(["📊 Make Prediction", "ℹ️ Feature Guide"])
-    
+
     with tab1:
         st.subheader("Predict the Best Next Shot")
-        
+
         col1, col2 = st.columns(2)
-        
+
         with col1:
             st.markdown("### **Player Information**")
             pl_0_hand = st.selectbox("Your Hand", ["Right (R)", "Left (L)"], key="nbs_pl_0_hand")
             pl_0_hand = 0 if pl_0_hand == "Right (R)" else 1
-            
+
             pl_1_hand = st.selectbox("Opponent Hand", ["Right (R)", "Left (L)"], key="nbs_pl_1_hand")
             pl_1_hand = 0 if pl_1_hand == "Right (R)" else 1
-        
+
         with col2:
             st.markdown("### **Match Information**")
             gender = st.selectbox("Gender", ["Men (M)", "Women (W)"], key="nbs_gender")
             gender = 0 if gender == "Men (M)" else 1
-            
+
             best_of = st.number_input("Best Of", min_value=3, max_value=5, value=3, step=2, key="nbs_best_of")
-        
+
         st.markdown("---")
-        
+
         # Tiebreaker checkbox first to determine point input type
         is_tiebreaker = st.checkbox("Is Tiebreaker", value=False, key="nbs_is_tiebreaker_check")
-        
+
         st.markdown("### **Current Match Score**")
         col1, col2, col3, col4 = st.columns(4)
         with col1:
-            set0 = st.number_input("Number of Sets Won (You)", min_value=0, max_value=2, value=0, key="nbs_set0")
             if is_tiebreaker:
                 player_0_point = st.number_input("Your Points (Tiebreak)", min_value=0, max_value=20, value=0, key="nbs_player_0_point")
             else:
                 player_0_point_str = st.selectbox("Your Points", ["0", "15", "30", "40", "AD"], key="nbs_player_0_point", index=0)
                 player_0_point = point_parser(player_0_point_str)
         with col2:
-            set1 = st.number_input("Number of Sets Won (Opponent)", min_value=0, max_value=2, value=0, key="nbs_set1")
             if is_tiebreaker:
                 player_1_point = st.number_input("Opponent Points (Tiebreak)", min_value=0, max_value=20, value=0, key="nbs_player_1_point")
             else:
                 player_1_point_str = st.selectbox("Opponent Points", ["0", "15", "30", "40", "AD"], key="nbs_player_1_point", index=0)
                 player_1_point = point_parser(player_1_point_str)
         with col3:
-            game0 = st.number_input("Number of Games Won (You)", min_value=0, max_value=7, value=0, key="nbs_game0")
             svr = st.selectbox("Role", ["Server", "Receiver"], key="nbs_svr")
             svr = 0 if svr == "Server" else 1
         with col4:
-            game1 = st.number_input("Number of Games Won (Opponent)", min_value=0, max_value=7, value=0, key="nbs_game1")
             surface = st.selectbox("Surface", ["Hard", "Clay", "Grass"], key="nbs_surface")
             surface_Hard = 1 if surface == "Hard" else 0
             surface_Clay = 1 if surface == "Clay" else 0
             surface_Grass = 1 if surface == "Grass" else 0
-        
+
         st.markdown("---")
-        
+
         st.markdown("### **Current Rally Status**")
         col1, col2, col3 = st.columns(3)
         with col1:
@@ -923,53 +748,37 @@ def show_nbs_predictor_page():
             first_serve_in = 1.0 if first_serve_in == "Yes (1)" else 0.0
         with col3:
             shot_number = st.number_input("Shot Number (Your Current Shot)", min_value=1, max_value=20, value=2, key="nbs_shot_number")
-        
+
         st.markdown("---")
-        
+
         st.markdown("### **Opponent's Previous Shot**")
         st.info("Describe the shot your opponent just hit")
-        
+
         col1, col2, col3 = st.columns(3)
         with col1:
             prev_shot_type_option = st.selectbox("Opponent Shot Type", ["None"] + list(SHOT_TYPE_MAPPING.keys()), key="nbs_prev_shot_type")
             prev_shot_type = SHOT_TYPE_MAPPING.get(prev_shot_type_option, -1) if prev_shot_type_option != "None" else -1
-        
+
         with col2:
             prev_shot_direction_option = st.selectbox("Opponent Shot Direction", ["None"] + list(DIRECTION_MAPPING.keys()), key="nbs_prev_shot_direction")
             prev_shot_direction = DIRECTION_MAPPING.get(prev_shot_direction_option, -1) if prev_shot_direction_option != "None" else -1
-        
+
         with col3:
             prev_shot_depth_option = st.selectbox("Opponent Shot Depth", ["None", "Shallow", "Medium", "Deep"], key="nbs_prev_shot_depth")
             prev_shot_depth = -1 if prev_shot_depth_option == "None" else DEPTH_MAPPING.get(prev_shot_depth_option, -1)
-        
+
         col1, col2 = st.columns(2)
         with col1:
             prev_shot_shank_info_option = st.selectbox("Opponent Shot - Shank", ["None", "No", "Yes"], key="nbs_prev_shot_shank")
             prev_shot_shank_info = -1 if prev_shot_shank_info_option == "None" else SHANK_INFO_MAPPING.get(prev_shot_shank_info_option, -1)
-        
+
         with col2:
             prev_shot_position_info_option = st.selectbox("Opponent Position", ["None"] + list(POSITION_MAPPING.keys()), key="nbs_prev_shot_position")
             prev_shot_position_info = POSITION_MAPPING.get(prev_shot_position_info_option, -1) if prev_shot_position_info_option != "None" else -1
-        
+
         st.markdown("---")
-        
+
         if st.button("🎯 Predict Best Next Shot", key="nbs_predict_button", use_container_width=True):
-            # Calculate derived features
-            point_diff = player_0_point - player_1_point
-            
-            # Determine if deuce (both at 40, or in tiebreaker both at same point with 6+)
-            is_deuce = 0
-            if is_tiebreaker:
-                is_deuce = 1.0 if player_0_point >= 6 and player_0_point == player_1_point else 0.0
-            else:
-                # In regular scoring: 40-40 is deuce
-                is_deuce = 1.0 if player_0_point == 3 and player_1_point == 3 else 0.0
-            
-            # Determine if break point (set to 0 for now, could be enhanced with game/set data)
-            is_breakpoint = 0.0
-            game_diff = game0 - game1
-            set_diff = set0 - set1
-            
             # Create input dataframe with all features
             input_data = {
                 'pl_0_hand': pl_0_hand,
@@ -984,11 +793,6 @@ def show_nbs_predictor_page():
                 'player_0_point': player_0_point,
                 'player_1_point': player_1_point,
                 'is_tiebreaker': is_tiebreaker_float,
-                'point_diff': float(point_diff),
-                'game_diff': float(game_diff),
-                'set_diff': float(set_diff),
-                'is_deuce': float(is_deuce),
-                'is_breakpoint': float(is_breakpoint),
                 'first_serve_in': first_serve_in,
                 'shot_number': shot_number,
                 'prev_shot_type': prev_shot_type,
@@ -997,90 +801,87 @@ def show_nbs_predictor_page():
                 'prev_shot_shank_info': prev_shot_shank_info,
                 'prev_shot_position_info': prev_shot_position_info,
             }
-            
+
             # Ensure all required features are present with default values
             for col in feature_columns:
                 if col not in input_data:
                     input_data[col] = -1.0
-            
+
             # Create dataframe with only required columns in correct order
             input_df = pd.DataFrame([{col: input_data[col] for col in feature_columns}])
-            
+
             try:
-                pred_encoded = int(model.predict(input_df)[0])
-                probabilities = model.predict_proba(input_df)[0]
-                raw_scores = model.predict(input_df, raw_score=True)[0]
-                ranked_class_indices = np.argsort(raw_scores)[::-1]
-                rank_score_by_class = {
-                    int(class_index): 100.0 * (len(raw_scores) - rank_index) / len(raw_scores)
-                    for rank_index, class_index in enumerate(ranked_class_indices)
-                }
-                predictions = nbs_label_encoder.inverse_transform([pred_encoded])[0]
-                
+                # Multi-output predict -> array like [shot_type, shot_direction, shot_depth]
+                predictions = model.predict(input_df)[0]
+
                 st.markdown("---")
                 st.markdown("## 🎯 **Recommended Next Shot**")
-                
-                # Parse label safely; the trained model predicts shot type and direction only
-                shot_parts = predictions.split('_')
-                while len(shot_parts) < 2:
-                    shot_parts.append('NA')
-                
-                col1, col2 = st.columns(2)
-                
+
+                # Extract the predicted values and decode them using label encoders
+                shot_type_encoded = int(predictions[0])
+                direction_encoded = int(predictions[1])
+                depth_encoded = int(predictions[2])
+
+                def decode_nbs(enc_key, val, reverse_map):
+                    try:
+                        orig = label_encoders[enc_key].inverse_transform([val])[0]
+                        orig_i = int(float(orig))
+                        return reverse_map.get(orig_i, 'Unknown')
+                    except:
+                        return 'Unknown'
+
+                shot_type_name = decode_nbs('shot_type', shot_type_encoded, SHOT_TYPE_REVERSE)
+                direction_name = decode_nbs('shot_direction', direction_encoded, DIRECTION_REVERSE)
+                depth_name = decode_nbs('shot_depth', depth_encoded, DEPTH_REVERSE)
+
+                col1, col2, col3 = st.columns(3)
+
                 with col1:
-                    if shot_parts[0] != 'NA':
-                        shot_type_num = int(shot_parts[0])
-                        shot_type_name = SHOT_TYPE_REVERSE.get(shot_type_num, 'Unknown')
-                        st.info(f"**Recommended Shot Type**\n{shot_type_name.title()}")
-                
+                    st.metric("Shot Type", shot_type_name.title(), delta=None)
+
                 with col2:
-                    if shot_parts[1] != 'NA':
-                        shot_dir_num = int(shot_parts[1])
-                        shot_dir_name = DIRECTION_REVERSE.get(shot_dir_num, 'Unknown')
-                        st.info(f"**Recommended Direction**\n{shot_dir_name.title()}")
-                
+                    st.metric("Direction", direction_name.title(), delta=None)
+
+                with col3:
+                    st.metric("Depth", depth_name.title(), delta=None)
+
+                # Display detailed prediction info
+                st.markdown("### **Recommended Next Shot**")
+                st.info(f"🎾 **{shot_type_name.upper()}** shot **{direction_name.upper()}** with **{depth_name.upper()}** depth")
+
+                # Show top 3 joint choices using predict_proba
+                try:
+                    top3 = top_k_multioutput_predictions(model, input_df, k=3)
+                    st.markdown("---")
+                    st.markdown("### **Top 3 Candidate Shots**")
+                    cols = st.columns(3)
+                    for idx, (class_tuple, joint_p) in enumerate(top3):
+                        with cols[idx]:
+                            st.write(f"**#{idx+1} — {joint_p*100:.1f}%**")
+                            st.write("")
+                            st.write("• "+decode_nbs('shot_type', class_tuple[0], SHOT_TYPE_REVERSE).title())
+                            st.write("• "+decode_nbs('shot_direction', class_tuple[1], DIRECTION_REVERSE).title())
+                            st.write("• "+decode_nbs('shot_depth', class_tuple[2], DEPTH_REVERSE).title())
+                except Exception:
+                    # Non-fatal: keep single prediction shown
+                    pass
+
                 st.markdown("---")
-                
-                # Display top 3 possible shots with rank-based scores
-                st.markdown("### **Top 3 Recommended Shots**")
-                
-                # Get unique predictions and map them to a rank score for display
-                unique_pred_ids = model.classes_
-                unique_preds = nbs_label_encoder.inverse_transform(unique_pred_ids.astype(int))
-                pred_data = pd.DataFrame({
-                    'Shot Sequence': unique_preds,
-                    'Rank Score': [rank_score_by_class.get(int(class_id), 0.0) for class_id in unique_pred_ids.astype(int)]
-                }).sort_values('Rank Score', ascending=False).head(3)
-                
-                # Display as cards
-                cols = st.columns(3)
-                for idx, (col, row) in enumerate(zip(cols, pred_data.itertuples())):
-                    with col:
-                        shot_parts = row[1].split('_')
-                        while len(shot_parts) < 2:
-                            shot_parts.append('NA')
-                        shot_type_name = SHOT_TYPE_REVERSE.get(int(shot_parts[0]) if shot_parts[0] != 'NA' else -1, 'Unknown')
-                        direction_name = DIRECTION_REVERSE.get(int(shot_parts[1]) if shot_parts[1] != 'NA' else -1, 'Unknown')
-                        st.info(f"**#{idx+1} (Score {row[2]:.1f})**\n\n{shot_type_name.title()} • {direction_name.title()}")
-                
-                st.markdown("### **Shot Sequence Breakdown**")
-                st.markdown(f"**Full Prediction:** `{predictions}`")
-                top_scores = pd.Series(rank_score_by_class).sort_values(ascending=False).head(3)
-                st.markdown(f"**Top Class Score:** {top_scores.iloc[0]:.1f}")
-                st.caption(
-                    f"Top 3 rank scores: {top_scores.iloc[0]:.1f}, {top_scores.iloc[1]:.1f}{', ' + f'{top_scores.iloc[2]:.1f}' if len(top_scores) > 2 else ''}"
-                )
-                st.caption("These are rank-based display scores, not calibrated probabilities. The raw LightGBM probabilities remain very peaked.")
-            
+                st.markdown("### **Key Insights**")
+                if first_serve_in == 1:
+                    st.markdown("✓ First serve in - high-quality ball")
+                else:
+                    st.markdown("⚠ Second serve - consider aggressive placement")
+
             except Exception as e:
                 st.error(f"Error making prediction: {str(e)}")
-    
+
     with tab2:
         st.markdown("""
         ### **How to Use the Next Best Shot Predictor**
-        
+
         This tool recommends the optimal next shot based on your opponent's previous shot and match context.
-        
+
         #### **Input Guide**
         - **Your Hand & Opponent Hand**: Handedness of each player
         - **Gender**: Player classification (Men or Women)
@@ -1091,17 +892,17 @@ def show_nbs_predictor_page():
         - **Is Tiebreaker**: Check if playing a tiebreaker
         - **First Serve In**: Whether first serve was in
         - **Shot Number**: Your current shot number in the rally
-        
+
         #### **Opponent's Previous Shot**
         - **Shot Type**: What type of shot they hit (forehand, backhand, volley, etc.)
         - **Direction**: Where they aimed (crosscourt, down the line, middle)
         - **Depth**: How deep the shot landed (shallow, medium, deep)
         - **Shank**: Whether it was a mishit
         - **Position**: Where they were standing (baseline, net, behind baseline)
-        
+
         #### **Output**
-        The model will recommend the best shot type, direction, and depth for your next shot,
-        along with a confidence score and alternative options.
+        The model outputs three separate predictions: shot type, direction, and depth.
+        The UI will display decoded, human-readable recommendations for each component.
         """)
 
 def show_model_page():
@@ -1293,7 +1094,31 @@ def show_brbs_predictor_page():
                 # Display detailed prediction info
                 st.markdown("### **Recommended Return**")
                 st.info(f"🎾 **{shot_type_name.upper()}** shot **{direction_name.upper()}** with **{depth_name.upper()}** depth")
-                
+
+                # Show top 3 joint choices using predict_proba
+                try:
+                    def decode_brbs(enc_key, val, reverse_map):
+                        try:
+                            orig = label_encoders[enc_key].inverse_transform([val])[0]
+                            orig_i = int(float(orig))
+                            return reverse_map.get(orig_i, 'Unknown')
+                        except:
+                            return 'Unknown'
+
+                    top3 = top_k_multioutput_predictions(model, input_df, k=3)
+                    st.markdown("---")
+                    st.markdown("### **Top 3 Candidate Returns**")
+                    cols = st.columns(3)
+                    for idx, (class_tuple, joint_p) in enumerate(top3):
+                        with cols[idx]:
+                            st.write(f"**#{idx+1} — {joint_p*100:.1f}%**")
+                            st.write("")
+                            st.write("• "+decode_brbs('return_shot_type', class_tuple[0], SHOT_TYPE_REVERSE).title())
+                            st.write("• "+decode_brbs('return_direction', class_tuple[1], DIRECTION_REVERSE).title())
+                            st.write("• "+decode_brbs('return_depth', class_tuple[2], DEPTH_REVERSE).title())
+                except Exception:
+                    pass
+
                 st.markdown("---")
                 st.markdown("### **Key Insights**")
                 if first_serve_in == 1:

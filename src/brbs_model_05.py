@@ -8,6 +8,7 @@ from sklearn.model_selection import train_test_split
 from sklearn.multioutput import MultiOutputClassifier
 from sklearn.preprocessing import LabelEncoder
 from sklearn.metrics import accuracy_score
+from sklearn.metrics import classification_report, confusion_matrix, accuracy_score, f1_score
 from sklearn.utils.class_weight import compute_class_weight
 from config import XGBOOST_BRBS_MODEL, FEATURE_COLUMNS_BRBS, LABEL_ENCODERS_BRBS, BEST_RETURN_BASED_ON_SERVE_DATASET
 
@@ -89,8 +90,40 @@ joblib.dump(label_encoders, LABEL_ENCODERS_BRBS)
 y_pred = final_model.predict(X_test)
 accuracy = multi_output_accuracy_score(y_test, y_pred)
 print(f"Final BRBS Model Accuracy (with balanced class weights): {accuracy:.4f}")
-print(f"Model trained with class weight balancing for direction prediction to mitigate class imbalance")
-print(f"(Down the line: 47%, Middle: 28%, Crosscourt: 25% in training data)")
+print("Evaluating model on test set...")
+for i, target in enumerate(targets):
+    f1_macro = f1_score(
+        y_test[:, i],
+        y_pred[:, i],
+        average='macro',
+        zero_division=0
+    )
+
+    f1_weighted = f1_score(
+        y_test[:, i],
+        y_pred[:, i],
+        average='weighted',
+        zero_division=0
+    )
+
+    print(f"{target}")
+    print(f"Macro F1    : {f1_macro:.4f}")
+    print(f"Weighted F1 : {f1_weighted:.4f}")
+    print()
+
+# Print top 10 most important features
+print(f"\n{'='*60}")
+print("TOP 10 MOST IMPORTANT FEATURES")
+print(f"{'='*60}")
+for i, target in enumerate(targets):
+    importance = pd.DataFrame({
+        "feature": X.columns,
+        "importance": final_model.estimators_[i].feature_importances_
+    }).sort_values("importance", ascending=False)
+
+    print("=" * 60)
+    print(f"Top features for {target}")
+    print(importance.head(10))
 
 
 """Best Trial:
@@ -113,11 +146,62 @@ print(f"(Down the line: 47%, Middle: 28%, Crosscourt: 25% in training data)")
     colsample_bytree: 0.7690981087553185
     min_child_weight: 3"""
     
-    
-# prev used
-"""'n_estimators': 83,
-        'max_depth': 8,
-        'learning_rate': 0.055306213512133745,
-        'subsample': 0.7166588461840604,
-        'colsample_bytree': 0.9433327763920194,
-        'min_child_weight': 2"""
+"""
+Final BRBS Model Accuracy (with balanced class weights): 0.5571
+Evaluating model on test set...
+return_shot_type
+Macro F1    : 0.1394
+Weighted F1 : 0.6749
+
+return_direction
+Macro F1    : 0.4628
+Weighted F1 : 0.4778
+
+return_depth
+Macro F1    : 0.2204
+Weighted F1 : 0.3126
+
+
+============================================================
+TOP 10 MOST IMPORTANT FEATURES
+============================================================
+============================================================
+Top features for return_shot_type
+           feature  importance
+10  first_serve_in    0.214834
+8   player_1_point    0.157144
+7   player_0_point    0.118584
+11  serve_location    0.110733
+1        pl_1_hand    0.097245
+0        pl_0_hand    0.092905
+3              svr    0.061861
+2           gender    0.061839
+4     surface_Clay    0.053528
+5    surface_Grass    0.015267
+============================================================
+Top features for return_direction
+           feature  importance
+10  first_serve_in    0.262446
+11  serve_location    0.180291
+8   player_1_point    0.157874
+7   player_0_point    0.154130
+2           gender    0.056000
+0        pl_0_hand    0.055460
+1        pl_1_hand    0.054749
+5    surface_Grass    0.019549
+3              svr    0.019547
+4     surface_Clay    0.018081
+============================================================
+Top features for return_depth
+           feature  importance
+2           gender    0.447876
+10  first_serve_in    0.209073
+5    surface_Grass    0.103920
+6     surface_Hard    0.039811
+4     surface_Clay    0.035445
+11  serve_location    0.026804
+0        pl_0_hand    0.026359
+1        pl_1_hand    0.024374
+7   player_0_point    0.023880
+8   player_1_point    0.023310
+"""
