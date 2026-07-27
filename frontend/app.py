@@ -635,16 +635,125 @@ def show_predictor_page():
         This will be converted to -1 for the model input.
         """)
 
-# ============= OTHER PAGES =============
 def show_analysis_page():
-    """Display the match analysis page"""
+    """Display a streamlined match analysis dashboard with final dataset statistics."""
     if st.button("← Back to Home", key="back_home_analysis"):
-        st.session_state.current_page = 'home'
+        st.session_state.current_page = "home"
         st.rerun()
-    
-    st.title("📊 Match Analysis")
+
+    st.title("📊 Match Analysis Summary")
+    st.caption("Aggregated statistical overview from precomputed match data.")
     st.markdown("---")
-    st.info("Match Analysis page coming soon! This will provide detailed statistics and trends from professional tennis matches.")
+
+    # --- EXACT FINAL DATA VALUES ---
+    points_men = 1_125_469
+    points_women = 503_835
+    total_points = points_men + points_women
+
+    points_clay = 388_111
+    points_grass = 204_050
+    points_hard = 1_037_143
+
+    avg_rally_length = 4.805255
+
+    first_serve_win_pct = 68.168295
+    second_serve_win_pct = 48.926241
+
+    serve_ratios = {
+        "Wide": 0.404837,
+        "Body": 0.234851,
+        "T-Serve": 0.335581,
+    }
+
+    points_ending = pd.DataFrame(
+        {
+            "Stage": ["Serve", "Return", "Serve + 1", "Others"],
+            "Share (%)": [11.519459, 19.694115, 16.960003, 51.826424],
+        }
+    ).set_index("Stage")
+
+    surface_data = pd.DataFrame(
+        {
+            "Surface": ["Clay", "Grass", "Hard"],
+            "Points": [points_clay, points_grass, points_hard],
+            "Avg Rally Length": [5.264190, 4.081465, 4.775917],
+        }
+    )
+
+    # --- TWO COMPACT TABS ---
+    tab_overview, tab_serves = st.tabs(["🎾 Overview & Rallies", "🎯 Serve & Points Breakdown"])
+
+    # --- TAB 1: OVERVIEW & RALLIES ---
+    with tab_overview:
+        st.subheader("Dataset Snapshot")
+        col1, col2, col3, col4 = st.columns(4)
+        col1.metric("Total Points", f"{total_points:,}")
+        col2.metric("Men's Points", f"{points_men:,}")
+        col3.metric("Women's Points", f"{points_women:,}")
+        col4.metric("Avg Rally Length", f"{avg_rally_length:.2f} shots")
+
+        st.markdown("---")
+
+        col_left, col_right = st.columns(2)
+
+        with col_left:
+            st.markdown("##### Points Played by Surface")
+            st.bar_chart(surface_data.set_index("Surface")["Points"])
+
+        with col_right:
+            st.markdown("##### Average Rally Length by Surface")
+            st.bar_chart(surface_data.set_index("Surface")["Avg Rally Length"])
+
+    # --- TAB 2: SERVE & POINTS BREAKDOWN ---
+    with tab_serves:
+        st.subheader("Serve Efficiency & Point Outcomes")
+
+        # Top key metric indicators
+        m1, m2 = st.columns(2)
+        m1.metric("1st Serve Win %", f"{first_serve_win_pct:.2f}%")
+        m2.metric("2nd Serve Win %", f"{second_serve_win_pct:.2f}%")
+
+        st.markdown("---")
+
+        col_a, col_b = st.columns(2)
+
+        with col_a:
+            st.markdown("##### Serve Placement Distribution")
+            serve_df = pd.DataFrame(
+                list(serve_ratios.items()), columns=["Location", "Ratio"]
+            ).set_index("Location")
+            st.bar_chart(serve_df)
+
+        with col_b:
+            st.markdown("##### Point Ending Stage (%)")
+            st.bar_chart(points_ending)
+
+    # --- EXPANDABLE FULL SUMMARY TABLE ---
+    with st.expander("📋 View Complete Exact Summary Table"):
+        summary_table = pd.DataFrame(
+            [
+                {"Metric": "Points (Men)", "Value": f"{points_men:,}"},
+                {"Metric": "Points (Women)", "Value": f"{points_women:,}"},
+                {"Metric": "Total Points Analyzed", "Value": f"{total_points:,}"},
+                {"Metric": "Points on Clay", "Value": f"{points_clay:,}"},
+                {"Metric": "Points on Grass", "Value": f"{points_grass:,}"},
+                {"Metric": "Points on Hard", "Value": f"{points_hard:,}"},
+                {"Metric": "Average Rally Length per Point", "Value": f"{avg_rally_length:.6f}"},
+                {"Metric": "Avg Rally Length - Clay", "Value": "5.264190"},
+                {"Metric": "Avg Rally Length - Grass", "Value": "4.081465"},
+                {"Metric": "Avg Rally Length - Hard", "Value": "4.775917"},
+                {"Metric": "Points Won on 1st Serve (%)", "Value": f"{first_serve_win_pct:.2f}%"},
+                {"Metric": "Points Won on 2nd Serve (%)", "Value": f"{second_serve_win_pct:.2f}%"},
+                {"Metric": "Wide Serve Ratio", "Value": f"{serve_ratios['Wide']*100:.2f}%"},
+                {"Metric": "Body Serve Ratio", "Value": f"{serve_ratios['Body']*100:.2f}%"},
+                {"Metric": "T Serve Ratio", "Value": f"{serve_ratios['T-Serve']*100:.2f}%"},
+                {"Metric": "Points Ending on Serve (%)", "Value": "11.52%"},
+                {"Metric": "Points Ending on Return (%)", "Value": "19.69%"},
+                {"Metric": "Points Ending on Serve + 1 (%)", "Value": "16.96%"},
+                {"Metric": "Points Ending in Extended Rally (%)", "Value": "51.83%"},
+            ]
+        )
+        st.dataframe(summary_table, use_container_width=True, hide_index=True)
 
 def show_nbs_predictor_page():
     """Display the next best shot predictor"""

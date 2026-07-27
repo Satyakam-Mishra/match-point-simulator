@@ -110,7 +110,7 @@ class LivePointWinProbabilityDataset(BaseModel):
     game2: int
     player_1_point: int
     player_2_point: int
-    svr: int
+    Svr: int
     point_winner: int
     
 def parse_serve_rph_live_point_win_probability(dataset):
@@ -326,22 +326,30 @@ def winner_vs_unforced_error_vs_forced_error(dataset):
 
 def percentage_of_points_won_by_first_serve(dataset):
     """Calculate the percentage of points won by the player who served first."""
-    total_first_serve_points = dataset[dataset["first_serve_in"] == True].shape[0]
-    points_won_by_first_serve = dataset[dataset["point_winner"] == dataset["svr"]].shape[0]
-    return (points_won_by_first_serve / total_first_serve_points) * 100 if total_first_serve_points > 0 else 0
+    first_serve_df = dataset[dataset["first_serve_in"] == 1.0]
+    total_first_serve_points = first_serve_df.shape[0]
+    if total_first_serve_points == 0:
+        return 0.0
+    points_won_by_first_serve = first_serve_df[first_serve_df["point_winner"] == first_serve_df["Svr"]].shape[0]
+    return (points_won_by_first_serve / total_first_serve_points) * 100.0
 
 def percentage_of_points_won_by_second_serve(dataset):
     """Calculate the percentage of points won by the player who served second."""
-    total_second_serve_points = dataset[dataset["first_serve_in"] == False].shape[0]
-    points_won_by_second_serve = dataset[dataset["point_winner"] == dataset["svr"]].shape[0]
-    return (points_won_by_second_serve / total_second_serve_points) * 100 if total_second_serve_points > 0 else 0
+    second_serve_df = dataset[dataset["first_serve_in"] == 0.0]
+    total_second_serve_points = second_serve_df.shape[0]
+    
+    if total_second_serve_points == 0:
+        return 0.0
+        
+    points_won_by_second_serve = second_serve_df[second_serve_df["point_winner"] == second_serve_df["Svr"]].shape[0]
+    return (points_won_by_second_serve / total_second_serve_points) * 100.0
 
 def ratio_wide_serve_body_serve_T_serve(dataset):
     """Calculate the ratio of wide serves, body serves, and T serves."""
     total_serves = dataset.shape[0]
-    wide_serves = dataset[dataset["serve_location"] == 4].shape[0]
-    body_serves = dataset[dataset["serve_location"] == 5].shape[0]
-    t_serves = dataset[dataset["serve_location"] == 6].shape[0]
+    wide_serves = dataset[dataset["serve_location"] == '4'].shape[0]
+    body_serves = dataset[dataset["serve_location"] == '5'].shape[0]
+    t_serves = dataset[dataset["serve_location"] == '6'].shape[0]
     
     return {
         "wide_serve_ratio": wide_serves / total_serves if total_serves > 0 else 0,
@@ -375,3 +383,28 @@ if __name__ == "__main__":
     percentage_second_serve_points_won = percentage_of_points_won_by_second_serve(dataset)
     serve_ratios = ratio_wide_serve_body_serve_T_serve(dataset)
     points_ending_ratios = points_ending_by_serve_vs_by_return_vs_by_serve_plus_one_vs_others(dataset)
+    
+    print("===== DATASET STATISTICS =====\n")
+
+    print(f"Points (Men): {num_men}")
+    print(f"Points (Women): {num_women}\n")
+
+    print(f"Points on Clay: {num_clay}")
+    print(f"Points on Grass: {num_grass}")
+    print(f"Points on Hard: {num_hard}\n")
+
+    print(f"Average Rally Length per Point: {avg_rally_length_per_point}\n")
+
+    print("Average Rally Length by Surface:")
+    print(avg_rally_length_by_surface)
+    print()
+
+    print(f"Percentage of Points Won on First Serve: {percentage_first_serve_points_won}")
+    print(f"Percentage of Points Won on Second Serve: {percentage_second_serve_points_won}\n")
+
+    print("Serve Ratios (Wide, Body, T):")
+    print(serve_ratios)
+    print()
+
+    print("Points Ending Ratios (Serve, Return, Serve+1, Others):")
+    print(points_ending_ratios)
